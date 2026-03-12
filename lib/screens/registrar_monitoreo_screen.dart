@@ -36,8 +36,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   Program? _programaSeleccionado;
   Station? _estacionSeleccionada;
   Matriz? _matrizSeleccionada;
-  Map<String, dynamic>? _equipoMultiSeleccionado;
-  Map<String, dynamic>? _turbidimetroSeleccionado;
+  String? _equipoMultiparametroSeleccionado;
+  String? _turbidimetroSeleccionado;
   Metodo? _metodoSeleccionado;
 
   // Controllers para inputs numéricos y texto
@@ -55,7 +55,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    _loadDropdownData();
   }
 
   @override
@@ -70,23 +70,32 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     super.dispose();
   }
 
-  Future<void> _loadInitialData() async {
+  Future<void> _loadDropdownData() async {
     setState(() => _isLoading = true);
     try {
       final programas = await _dbHelper.getPrograms();
       final matrices = await _dbHelper.getMatrices();
       final metodos = await _dbHelper.getMetodos();
       final usuarios = await _dbHelper.getUsuarios();
-      final equiposMulti = await _dbHelper.getEquiposByType('Pozómetro');
-      final turbidimetros = await _dbHelper.getEquiposByType('Turbidimetro');
+      
+      final multiData = await _dbHelper.getEquiposByType('Pozómetro');
+      var turbiData = await _dbHelper.getEquiposByType('Turbidímetro');
+      if (turbiData.isEmpty) {
+        turbiData = await _dbHelper.getEquiposByType('Turbidimetro');
+      }
 
       setState(() {
         _programas = programas;
         _matrices = matrices;
         _metodos = metodos;
         _inspectoresOptions = usuarios.map((u) => '${u.nombre} ${u.apellido}').toList();
-        _equiposMultiOptions = equiposMulti.map((e) => e['codigo'] as String).toList();
-        _turbidimetrosOptions = turbidimetros.map((e) => e['codigo'] as String).toList();
+        
+        _equiposMulti = multiData;
+        _equiposMultiOptions = multiData.map((e) => e['codigo'].toString()).toList();
+        
+        _turbidimetros = turbiData;
+        _turbidimetrosOptions = turbiData.map((e) => e['codigo'].toString()).toList();
+        
         _isLoading = false;
       });
     } catch (e) {
@@ -116,6 +125,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   Future<void> _guardarMonitoreo() async {
+    // 1. Validation
     if (_programaSeleccionado == null || _estacionSeleccionada == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Debe seleccionar Programa y Punto de Control')),
@@ -125,6 +135,17 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
     setState(() => _isSaving = true);
     try {
+      // Find Inspector ID
+      int? inspectorId;
+      if (_inspectorSeleccionado != null) {
+        final usuarios = await _dbHelper.getUsuarios();
+        try {
+          final inspector = usuarios.firstWhere((u) => '${u.nombre} ${u.apellido}' == _inspectorSeleccionado);
+          inspectorId = inspector.idUsuario;
+        } catch (_) {}
+      }
+
+      // 2. Data Mapping & Conversion
       final registro = {
         'programa_id': _programaSeleccionado!.id,
         'estacion_id': _estacionSeleccionada!.id,
@@ -132,26 +153,33 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
         'observacion': _obsController.text,
         'matriz_id': _matrizSeleccionada?.idMatriz,
-        'equipo_multi_id': _equipoMultiSeleccionado?['id'],
+        'equipo_multi_id': _equiposMulti.firstWhere((e) => e['codigo'] == _equipoMultiparametroSeleccionado, orElse: () => {'id': null})['id'],
         'temp': double.tryParse(_tempController.text),
         'ph': double.tryParse(_phController.text),
         'conductividad': double.tryParse(_condController.text),
         'oxigeno': double.tryParse(_oxigenoController.text),
-        'turbidimetro_id': _turbidimetroSeleccionado?['id'],
+        'turbidimetro_id': _turbidimetros.firstWhere((e) => e['codigo'] == _turbidimetroSeleccionado, orElse: () => {'id': null})['id'],
         'turbiedad': double.tryParse(_turbiedadController.text),
         'metodo_id': _metodoSeleccionado?.idMetodo,
         'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
         'isotopico': _muestreoIsotopico == true ? 1 : 0,
         'cod_laboratorio': _codLabController.text,
+        'usuario_id': inspectorId,
       };
 
+      // 3. Insertion
       await _dbHelper.addRegistroMonitoreo(registro);
 
+      // 4. Success
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Monitoreo guardado correctamente')),
+          const SnackBar(
+            content: Text('Monitoreo guardado exitosamente'),
+            backgroundColor: Colors.green,
+          ),
         );
-        Navigator.pop(context);
+        // Redirigir a la lista de monitoreos en lugar de hacer pop
+        Navigator.pushReplacementNamed(context, '/monitoreos');
       }
     } catch (e) {
       if (mounted) {
@@ -199,14 +227,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Equipo Multiparametro',
                 hintText: 'Seleccione equipo',
-                selectedValue: _equipoMultiSeleccionado?['codigo'],
+                selectedValue: _equipoMultiparametroSeleccionado,
                 options: _equiposMultiOptions,
                 isDarkMode: isDarkMode,
-                onChanged: (val) {
-                  setState(() => _equipoMultiSeleccionado = {'codigo': val, 'id': 0}); // Simplified mapping
-                },
+                onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
               ),
-              if (_equipoMultiSeleccionado != null) ...[
+              if (_equipoMultiparametroSeleccionado != null) ...[
                 CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController),
                 CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController),
                 CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController),
@@ -220,12 +246,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Turbidimetro',
                 hintText: 'Seleccione equipo',
-                selectedValue: _turbidimetroSeleccionado?['codigo'],
+                selectedValue: _turbidimetroSeleccionado,
                 options: _turbidimetrosOptions,
                 isDarkMode: isDarkMode,
-                onChanged: (val) {
-                  setState(() => _turbidimetroSeleccionado = {'codigo': val, 'id': 0}); // Simplified mapping
-                },
+                onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
               ),
               if (_turbidimetroSeleccionado != null)
                 CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController),

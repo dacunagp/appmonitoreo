@@ -109,7 +109,9 @@ class DatabaseHelper {
         metodo_id INTEGER,
         hidroquimico INTEGER,
         isotopico INTEGER,
-        cod_laboratorio TEXT
+        cod_laboratorio TEXT,
+        usuario_id INTEGER,
+        FOREIGN KEY (usuario_id) REFERENCES usuarios (id_usuario)
       )
     ''');
   }
@@ -398,6 +400,17 @@ class DatabaseHelper {
     final db = await database;
     return await db.insert('registros_monitoreo', registro);
   }
+
+  Future<List<Map<String, dynamic>>> getMonitoreosList() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT rm.id, rm.fecha_hora, rm.monitoreo_fallido, s.name as estacion_name 
+      FROM registros_monitoreo rm
+      LEFT JOIN stations s ON rm.estacion_id = s.id
+      ORDER BY rm.fecha_hora DESC
+    ''');
+  }
+
   Future<List<Map<String, dynamic>>> getRegistrosMonitoreo() async {
     final db = await database;
     return await db.query('registros_monitoreo', orderBy: 'id DESC');
