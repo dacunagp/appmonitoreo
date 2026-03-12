@@ -94,6 +94,12 @@ class AppDrawer extends StatelessWidget {
                 const Divider(color: Colors.white24),
                 _buildMenuItem(
                   context,
+                  title: 'Administración',
+                  icon: Icons.storage_outlined,
+                  targetRoute: '/administracion',
+                ),
+                _buildMenuItem(
+                  context,
                   title: 'Settings',
                   icon: Icons.settings_outlined,
                   targetRoute: '/settings',

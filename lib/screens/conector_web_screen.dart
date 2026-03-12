@@ -53,12 +53,12 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
   Future<void> _syncData() async {
     setState(() => _isLoading = true);
     try {
-      final data = await _apiService.fetchPrograms();
+      final data = await _apiService.fetchAllData();
       await _dbHelper.syncData(data);
       await _loadPrograms();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Programas actualizados')),
+          const SnackBar(content: Text('Datos sincronizados correctamente')),
         );
       }
     } catch (e) {
