@@ -5,7 +5,8 @@ import '../database/database_helper.dart';
 import '../models/models.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
-  const RegistrarMonitoreoScreen({super.key});
+  final int? registroId;
+  const RegistrarMonitoreoScreen({super.key, this.registroId});
 
   @override
   State<RegistrarMonitoreoScreen> createState() => _RegistrarMonitoreoScreenState();
@@ -98,11 +99,90 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         
         _isLoading = false;
       });
+
+      if (widget.registroId != null) {
+        await _loadExistingData(widget.registroId!);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadExistingData(int id) async {
+    final data = await _dbHelper.getRegistroMonitoreoById(id);
+    if (data == null) return;
+
+    setState(() {
+      // 1. Basic Fields
+      _isMonitoreoFallido = data['monitoreo_fallido'] == 1;
+      if (data['fecha_hora'] != null) {
+        _fechaYHoraMuestreo = DateTime.parse(data['fecha_hora']);
+      }
+      _obsController.text = data['observacion'] ?? '';
+      _codLabController.text = data['cod_laboratorio'] ?? '';
+      _muestreoHidroquimico = data['hidroquimico'] == 1;
+      _muestreoIsotopico = data['isotopico'] == 1;
+
+      // 2. Dropdowns - Objects
+      if (data['programa_id'] != null) {
+        try {
+          _programaSeleccionado = _programas.firstWhere((p) => p.id == data['programa_id']);
+        } catch (_) {}
+      }
+      if (data['matriz_id'] != null) {
+        try {
+          _matrizSeleccionada = _matrices.firstWhere((m) => m.idMatriz == data['matriz_id']);
+        } catch (_) {}
+      }
+      if (data['metodo_id'] != null) {
+        try {
+          _metodoSeleccionado = _metodos.firstWhere((m) => m.idMetodo == data['metodo_id']);
+        } catch (_) {}
+      }
+
+      // 3. Dropdowns - Strings (Inverse Lookup)
+      if (data['usuario_id'] != null) {
+        _dbHelper.getUsuarios().then((usuarios) {
+          try {
+            final u = usuarios.firstWhere((user) => user.idUsuario == data['usuario_id']);
+            setState(() => _inspectorSeleccionado = '${u.nombre} ${u.apellido}');
+          } catch (_) {}
+        });
+      }
+      
+      if (data['equipo_multi_id'] != null) {
+        try {
+          final eq = _equiposMulti.firstWhere((e) => e['id'] == data['equipo_multi_id']);
+          _equipoMultiparametroSeleccionado = eq['codigo'];
+        } catch (_) {}
+      }
+      if (data['turbidimetro_id'] != null) {
+        try {
+          final eq = _turbidimetros.firstWhere((e) => e['id'] == data['turbidimetro_id']);
+          _turbidimetroSeleccionado = eq['codigo'];
+        } catch (_) {}
+      }
+
+      // 4. Numeric fields
+      _tempController.text = data['temp']?.toString() ?? '';
+      _phController.text = data['ph']?.toString() ?? '';
+      _condController.text = data['conductividad']?.toString() ?? '';
+      _oxigenoController.text = data['oxigeno']?.toString() ?? '';
+      _turbiedadController.text = data['turbiedad']?.toString() ?? '';
+    });
+
+    // Special case: Load stations if program is selected
+    if (_programaSeleccionado != null) {
+      final stations = await _dbHelper.getStationsByProgram(_programaSeleccionado!.id);
+      setState(() {
+        _estaciones = stations;
+        try {
+          _estacionSeleccionada = _estaciones.firstWhere((s) => s.id == data['estacion_id']);
+        } catch (_) {}
+      });
     }
   }
 
@@ -167,8 +247,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'usuario_id': inspectorId,
       };
 
-      // 3. Insertion
-      await _dbHelper.addRegistroMonitoreo(registro);
+      // 3. Persistence
+      if (widget.registroId != null) {
+        await _dbHelper.updateRegistroMonitoreo(widget.registroId!, registro);
+      } else {
+        await _dbHelper.addRegistroMonitoreo(registro);
+      }
 
       // 4. Success
       if (mounted) {

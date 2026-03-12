@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
+import 'registrar_monitoreo_screen.dart';
 
 class MonitoreosScreen extends StatefulWidget {
   const MonitoreosScreen({super.key});
@@ -152,7 +153,17 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                 children: [
                                   const Icon(Icons.done_all, color: Colors.green, size: 20),
                                   const SizedBox(width: 8),
-                                  Icon(Icons.chevron_right, color: colorGris),
+                                  InkWell(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => RegistrarMonitoreoScreen(registroId: item['id']),
+                                      ),
+                                    ).then((_) => _loadMonitoreos());
+                                  },
+                                    child: Icon(Icons.chevron_right, color: colorGris),
+                                  ),
                                 ],
                               ),
                               onTap: () {

@@ -425,4 +425,25 @@ class DatabaseHelper {
     final db = await database;
     return await db.delete('registros_monitoreo');
   }
+
+  Future<Map<String, dynamic>?> getRegistroMonitoreoById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'registros_monitoreo',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (maps.isNotEmpty) return maps.first;
+    return null;
+  }
+
+  Future<int> updateRegistroMonitoreo(int id, Map<String, dynamic> data) async {
+    final db = await database;
+    return await db.update(
+      'registros_monitoreo',
+      data,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
 }
