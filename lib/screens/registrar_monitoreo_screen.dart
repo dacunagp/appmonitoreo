@@ -1,6 +1,8 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import '../widgets/app_drawer.dart';
+import '../database/database_helper.dart';
+import '../models/models.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   const RegistrarMonitoreoScreen({super.key});
@@ -10,18 +12,156 @@ class RegistrarMonitoreoScreen extends StatefulWidget {
 }
 
 class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
-  // --- 1. VARIABLES DE ESTADO (¡Mira lo limpio que quedó esto!) ---
+  final DatabaseHelper _dbHelper = DatabaseHelper();
+
+  // --- 1. VARIABLES DE ESTADO ---
+  bool _isLoading = true;
+  bool _isSaving = false;
   bool _isMonitoreoFallido = false;
   DateTime? _fechaYHoraMuestreo; 
-  String? _matrizAguasSeleccionada; 
-  String? _equipoMultiparametroSeleccionado;
-  String? _turbidimetroSeleccionado;
-  String? _metodoMuestreoSeleccionado;
+
+  // Listas para dropdowns
+  List<Program> _programas = [];
+  List<Station> _estaciones = [];
+  List<Matriz> _matrices = [];
+  List<Map<String, dynamic>> _equiposMulti = [];
+  List<Map<String, dynamic>> _turbidimetros = [];
+  List<Metodo> _metodos = [];
+
+  // Selecciones (Objetos o IDs para lógica interna)
+  Program? _programaSeleccionado;
+  Station? _estacionSeleccionada;
+  Matriz? _matrizSeleccionada;
+  Map<String, dynamic>? _equipoMultiSeleccionado;
+  Map<String, dynamic>? _turbidimetroSeleccionado;
+  Metodo? _metodoSeleccionado;
+
+  // Controllers para inputs numéricos y texto
+  final TextEditingController _tempController = TextEditingController();
+  final TextEditingController _phController = TextEditingController();
+  final TextEditingController _condController = TextEditingController();
+  final TextEditingController _oxigenoController = TextEditingController();
+  final TextEditingController _turbiedadController = TextEditingController();
+  final TextEditingController _codLabController = TextEditingController();
+  final TextEditingController _obsController = TextEditingController();
+
   bool? _muestreoHidroquimico; 
-  bool? _muestreoIsotopico;    
+  bool? _muestreoIsotopico;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _tempController.dispose();
+    _phController.dispose();
+    _condController.dispose();
+    _oxigenoController.dispose();
+    _turbiedadController.dispose();
+    _codLabController.dispose();
+    _obsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoading = true);
+    try {
+      final programas = await _dbHelper.getPrograms();
+      final matrices = await _dbHelper.getMatrices();
+      final metodos = await _dbHelper.getMetodos();
+      final equiposMulti = await _dbHelper.getEquiposByType('Multiparámetro'); // Usando el tipo exacto
+      final turbidimetros = await _dbHelper.getEquiposByType('Turbidímetro');
+
+      setState(() {
+        _programas = programas;
+        _matrices = matrices;
+        _metodos = metodos;
+        _equiposMulti = equiposMulti;
+        _turbidimetros = turbidimetros;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _onProgramaChanged(String name) async {
+    final programa = _programas.firstWhere((p) => p.name == name);
+    setState(() {
+      _programaSeleccionado = programa;
+      _estacionSeleccionada = null;
+      _estaciones = [];
+    });
+
+    try {
+      final estaciones = await _dbHelper.getStationsByProgram(programa.id);
+      setState(() => _estaciones = estaciones);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cargar puntos: $e')));
+      }
+    }
+  }
+
+  Future<void> _guardarMonitoreo() async {
+    if (_programaSeleccionado == null || _estacionSeleccionada == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Debe seleccionar Programa y Punto de Control')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      final registro = {
+        'programa_id': _programaSeleccionado!.id,
+        'estacion_id': _estacionSeleccionada!.id,
+        'fecha_hora': _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String(),
+        'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
+        'observacion': _obsController.text,
+        'matriz_id': _matrizSeleccionada?.idMatriz,
+        'equipo_multi_id': _equipoMultiSeleccionado?['id'],
+        'temp': double.tryParse(_tempController.text),
+        'ph': double.tryParse(_phController.text),
+        'conductividad': double.tryParse(_condController.text),
+        'oxigeno': double.tryParse(_oxigenoController.text),
+        'turbidimetro_id': _turbidimetroSeleccionado?['id'],
+        'turbiedad': double.tryParse(_turbiedadController.text),
+        'metodo_id': _metodoSeleccionado?.idMetodo,
+        'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
+        'isotopico': _muestreoIsotopico == true ? 1 : 0,
+        'cod_laboratorio': _codLabController.text,
+      };
+
+      await _dbHelper.addRegistroMonitoreo(registro);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Monitoreo guardado correctamente')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -53,16 +193,18 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Equipo Multiparametro',
                 hintText: 'Seleccione equipo',
-                selectedValue: _equipoMultiparametroSeleccionado,
-                options: const ['Equipo GP-S-087', 'Equipo GP-S-275', 'Sonda GP-S-249', 'Sonda GP-S-348'],
+                selectedValue: _equipoMultiSeleccionado?['codigo'],
+                options: _equiposMulti.map((e) => e['codigo'] as String).toList(),
                 isDarkMode: isDarkMode,
-                onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
+                onChanged: (val) {
+                  setState(() => _equipoMultiSeleccionado = _equiposMulti.firstWhere((e) => e['codigo'] == val));
+                },
               ),
-              if (_equipoMultiparametroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode),
-                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode),
-                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode),
-                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode),
+              if (_equipoMultiSeleccionado != null) ...[
+                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController),
+                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController),
+                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController),
+                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController),
               ],
               const SizedBox(height: 8),
             ]),
@@ -72,13 +214,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Turbidimetro',
                 hintText: 'Seleccione equipo',
-                selectedValue: _turbidimetroSeleccionado,
-                options: const ['Equipo [GP-S-305]'],
+                selectedValue: _turbidimetroSeleccionado?['codigo'],
+                options: _turbidimetros.map((e) => e['codigo'] as String).toList(),
                 isDarkMode: isDarkMode,
-                onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
+                onChanged: (val) {
+                  setState(() => _turbidimetroSeleccionado = _turbidimetros.firstWhere((e) => e['codigo'] == val));
+                },
               ),
               if (_turbidimetroSeleccionado != null)
-                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode),
+                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController),
               const SizedBox(height: 8),
             ]),
             
@@ -87,10 +231,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               SearchableDropdown(
                 label: 'Método de Muestreo',
                 hintText: 'Seleccione método de muestreo',
-                selectedValue: _metodoMuestreoSeleccionado,
-                options: const ['Botella Vertical', 'Bomba', 'Despiche', 'LowFlow', 'Brazo Telescópico', 'Botella Horizontal', 'Directo a envases', 'Bailer', 'Vadeo', 'Otros'],
+                selectedValue: _metodoSeleccionado?.metodo,
+                options: _metodos.map((m) => m.metodo).toList(),
                 isDarkMode: isDarkMode,
-                onChanged: (val) => setState(() => _metodoMuestreoSeleccionado = val),
+                onChanged: (val) {
+                  setState(() => _metodoSeleccionado = _metodos.firstWhere((m) => m.metodo == val));
+                },
               ),
               CustomFormRow(
                 label: 'Muestreo Hidroquímico', 
@@ -112,8 +258,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   if (mounted && result != null) setState(() => _muestreoIsotopico = result);
                 }
               ),
-              CustomTextInputRow(label: 'Código Laboratorio', hintText: 'Ingrese código de laboratorio', isDarkMode: isDarkMode),
-              CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null),
+              CustomTextInputRow(label: 'Código Laboratorio', hintText: 'Ingrese código de laboratorio', isDarkMode: isDarkMode, controller: _codLabController),
+              CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController),
               const SizedBox(height: 8),
             ]),
             const SizedBox(height: 16),
@@ -123,9 +269,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
             child: OutlinedButton.icon(
-              onPressed: () => debugPrint('Botón GUARDAR presionado'),
-              icon: const Icon(Icons.save_outlined, color: Colors.blueAccent),
-              label: const Text('GUARDAR', style: TextStyle(color: Colors.blueAccent, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
+              onPressed: _isSaving ? null : _guardarMonitoreo,
+              icon: _isSaving 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.save_outlined, color: Colors.blueAccent),
+              label: Text(_isSaving ? 'GUARDANDO...' : 'GUARDAR', style: const TextStyle(color: Colors.blueAccent, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.blueAccent, width: 1.5), 
                 padding: const EdgeInsets.symmetric(vertical: 16.0), 
@@ -146,17 +294,37 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       color: Theme.of(context).scaffoldBackgroundColor, 
       child: Column(
         children: [
-          CustomFormRow(label: 'Programa', value: 'Seleccione programa', isValid: false, isDarkMode: isDarkMode),
+          SearchableDropdown(
+            label: 'Programa',
+            hintText: 'Seleccione programa',
+            selectedValue: _programaSeleccionado?.name,
+            options: _programas.map((p) => p.name).toList(),
+            isDarkMode: isDarkMode,
+            onChanged: _onProgramaChanged,
+          ),
+
+          SearchableDropdown(
+            label: 'Punto de Control',
+            hintText: 'Seleccione estación',
+            selectedValue: _estacionSeleccionada?.name,
+            options: _estaciones.map((s) => s.name).toList(),
+            isDarkMode: isDarkMode,
+            onChanged: (val) {
+              setState(() => _estacionSeleccionada = _estaciones.firstWhere((s) => s.name == val));
+            },
+          ),
+          
           CustomFormRow(label: 'Inspector', value: 'Seleccione inspector', isValid: false, isDarkMode: isDarkMode),
-          CustomFormRow(label: 'Punto de Control', value: 'Seleccione estación', isValid: false, isDarkMode: isDarkMode),
           
           SearchableDropdown(
             label: 'Matriz de Aguas',
             hintText: 'Seleccione Tipo de Aguas',
-            selectedValue: _matrizAguasSeleccionada,
-            options: const ['Aguas Subterráneas', 'Aguas Superficiales', 'Fines Industriales', 'Fuentes de Captación'],
+            selectedValue: _matrizSeleccionada?.nombreMatriz,
+            options: _matrices.map((m) => m.nombreMatriz).toList(),
             isDarkMode: isDarkMode,
-            onChanged: (val) => setState(() => _matrizAguasSeleccionada = val),
+            onChanged: (val) {
+              setState(() => _matrizSeleccionada = _matrices.firstWhere((m) => m.nombreMatriz == val));
+            },
           ),
           
           CustomFormRow(
@@ -182,14 +350,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           ),
 
           if (_isMonitoreoFallido)
-            CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null),
+            CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController),
           const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  // Helper para crear los ExpansionTiles de forma limpia
   Widget _buildSectionTile(String title, bool isDarkMode, List<Widget> children) {
     return ExpansionTile(
       initiallyExpanded: true,
@@ -222,7 +389,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
   String _formatearFechaYHora(DateTime f) => '${f.day.toString().padLeft(2,'0')}/${f.month.toString().padLeft(2,'0')}/${f.year} ${f.hour.toString().padLeft(2,'0')}:${f.minute.toString().padLeft(2,'0')}';
 
-  // Diálogo unificado para cualquier opción SI/NO
   Future<bool?> _mostrarDialogoSiNo(String titulo, bool? valorActual) async {
     bool? tempValue = valorActual;
     return await showDialog<bool>(
@@ -248,7 +414,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 }
 
 // ============================================================================
-// WIDGETS REUTILIZABLES (Magia para mantener el código corto)
+// WIDGETS REUTILIZABLES (Adaptados para usar controladores)
 // ============================================================================
 
 class SearchableDropdown extends StatefulWidget {
@@ -277,6 +443,14 @@ class _SearchableDropdownState extends State<SearchableDropdown> {
     _searchController.addListener(() {
       setState(() => _filteredOptions = widget.options.where((o) => o.toLowerCase().contains(_searchController.text.toLowerCase())).toList());
     });
+  }
+  
+  @override
+  void didUpdateWidget(SearchableDropdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.options != widget.options) {
+      _filteredOptions = widget.options;
+    }
   }
 
   @override
@@ -365,7 +539,7 @@ class CustomFormRow extends StatelessWidget {
     return ListTile(
       leading: Icon(customIcon ?? (isValid ? Icons.check_circle : Icons.cancel), color: customIconColor ?? (isValid ? Colors.greenAccent : Colors.grey.withValues(alpha: 0.5)), size: 24),
       title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
-      subtitle: Text(value, style: TextStyle(fontSize: 16, color: isValid || customIcon != null ? Theme.of(context).colorScheme.onSurface : colorGris)),
+      subtitle: Text(value, style: TextStyle(fontSize: 16, color: (isValid || customIcon != null) ? Theme.of(context).colorScheme.onSurface : colorGris)),
       trailing: showArrow ? Icon(Icons.arrow_drop_down, color: colorGris) : null,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0), dense: true,
       onTap: onTap ?? () => debugPrint('Tapped on $label'),
@@ -376,8 +550,9 @@ class CustomFormRow extends StatelessWidget {
 class CustomParametroInputRow extends StatelessWidget {
   final String label, hintText;
   final bool isDarkMode;
+  final TextEditingController controller;
 
-  const CustomParametroInputRow({super.key, required this.label, required this.hintText, required this.isDarkMode});
+  const CustomParametroInputRow({super.key, required this.label, required this.hintText, required this.isDarkMode, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -385,6 +560,7 @@ class CustomParametroInputRow extends StatelessWidget {
       leading: const Icon(Icons.chevron_right, color: Colors.blueAccent, size: 24),
       title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
       subtitle: TextField(
+        controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true), 
         style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface),
         decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.black54, fontSize: 16), border: InputBorder.none, isDense: true, contentPadding: const EdgeInsets.only(top: 4.0)),
@@ -407,8 +583,9 @@ class CustomTextInputRow extends StatelessWidget {
   final String label, hintText;
   final bool isDarkMode;
   final int? maxLines;
+  final TextEditingController controller;
 
-  const CustomTextInputRow({super.key, required this.label, required this.hintText, required this.isDarkMode, this.maxLines = 1});
+  const CustomTextInputRow({super.key, required this.label, required this.hintText, required this.isDarkMode, this.maxLines = 1, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -416,6 +593,7 @@ class CustomTextInputRow extends StatelessWidget {
       leading: Icon(Icons.cancel, color: Colors.grey.withValues(alpha: 0.5), size: 24),
       title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
       subtitle: TextField(
+        controller: controller,
         keyboardType: maxLines == null ? TextInputType.multiline : TextInputType.text, maxLines: maxLines, 
         style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface),
         decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: isDarkMode ? Colors.grey.shade400 : Colors.black54, fontSize: 16), border: InputBorder.none, isDense: true, contentPadding: const EdgeInsets.only(top: 4.0)),

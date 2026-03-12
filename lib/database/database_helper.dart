@@ -89,6 +89,29 @@ class DatabaseHelper {
         FOREIGN KEY (id_form_fk) REFERENCES tipos_equipo (id_form)
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE registros_monitoreo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        programa_id INTEGER,
+        estacion_id INTEGER,
+        fecha_hora TEXT,
+        monitoreo_fallido INTEGER,
+        observacion TEXT,
+        matriz_id INTEGER,
+        equipo_multi_id INTEGER,
+        temp REAL,
+        ph REAL,
+        conductividad REAL,
+        oxigeno REAL,
+        turbidimetro_id INTEGER,
+        turbiedad REAL,
+        metodo_id INTEGER,
+        hidroquimico INTEGER,
+        isotopico INTEGER,
+        cod_laboratorio TEXT
+      )
+    ''');
   }
 
   Future<void> syncData(Map<String, dynamic> allData) async {
@@ -191,15 +214,11 @@ class DatabaseHelper {
     });
   }
 
+  // Getters
   Future<List<Program>> getPrograms() async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('programs');
-    return List.generate(maps.length, (i) {
-      return Program(
-        id: maps[i]['id'],
-        name: maps[i]['name'],
-      );
-    });
+    return maps.map((m) => Program(id: m['id'], name: m['name'])).toList();
   }
 
   Future<List<Station>> getStationsByProgram(int programId) async {
@@ -210,17 +229,13 @@ class DatabaseHelper {
       WHERE ps.program_id = ?
     ''', [programId]);
 
-    return List.generate(maps.length, (i) {
-      return Station(
-        id: maps[i]['id'],
-        name: maps[i]['name'],
-        latitude: maps[i]['latitude'],
-        longitude: maps[i]['longitude'],
-      );
-    });
+    return maps.map((m) => Station(
+      id: m['id'],
+      name: m['name'],
+      latitude: m['latitude'],
+      longitude: m['longitude']
+    )).toList();
   }
-
-  // New Getters for Data Viewer
 
   Future<List<Usuario>> getUsuarios() async {
     final db = await database;
@@ -259,109 +274,6 @@ class DatabaseHelper {
     )).toList();
   }
 
-  Future<List<EquipoDetalle>> getEquiposDetalle(int idForm) async {
-    final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
-      'equipos_detalle',
-      where: 'id_form_fk = ?',
-      whereArgs: [idForm],
-    );
-    return maps.map<EquipoDetalle>((m) => EquipoDetalle(
-      id: m['id'],
-      codigo: m['codigo'],
-      idFormFk: m['id_form_fk'],
-    )).toList();
-  }
-
-  // --- CRUD Operations ---
-
-  // Usuarios
-  Future<int> addUsuario(Usuario usuario) async {
-    final db = await database;
-    return await db.insert('usuarios', usuario.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<int> updateUsuario(Usuario usuario) async {
-    final db = await database;
-    return await db.update('usuarios', usuario.toMap(), where: 'id_usuario = ?', whereArgs: [usuario.idUsuario]);
-  }
-
-  Future<int> deleteUsuario(int id) async {
-    final db = await database;
-    return await db.delete('usuarios', where: 'id_usuario = ?', whereArgs: [id]);
-  }
-
-  // Métodos
-  Future<int> addMetodo(Metodo metodo) async {
-    final db = await database;
-    return await db.insert('metodos', metodo.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<int> updateMetodo(Metodo metodo) async {
-    final db = await database;
-    return await db.update('metodos', metodo.toMap(), where: 'id_metodo = ?', whereArgs: [metodo.idMetodo]);
-  }
-
-  Future<int> deleteMetodo(int id) async {
-    final db = await database;
-    return await db.delete('metodos', where: 'id_metodo = ?', whereArgs: [id]);
-  }
-
-  // Matrices
-  Future<int> addMatriz(Matriz matriz) async {
-    final db = await database;
-    return await db.insert('matrices', matriz.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<int> updateMatriz(Matriz matriz) async {
-    final db = await database;
-    return await db.update('matrices', matriz.toMap(), where: 'id_matriz = ?', whereArgs: [matriz.idMatriz]);
-  }
-
-  Future<int> deleteMatriz(int id) async {
-    final db = await database;
-    return await db.delete('matrices', where: 'id_matriz = ?', whereArgs: [id]);
-  }
-
-  // Programas
-  Future<int> addProgram(Program program) async {
-    final db = await database;
-    return await db.insert('programs', program.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<int> updateProgram(Program program) async {
-    final db = await database;
-    return await db.update('programs', program.toMap(), where: 'id = ?', whereArgs: [program.id]);
-  }
-
-  Future<int> deleteProgram(int id) async {
-    final db = await database;
-    await db.delete('program_stations', where: 'program_id = ?', whereArgs: [id]);
-    return await db.delete('programs', where: 'id = ?', whereArgs: [id]);
-  }
-
-  // Estaciones
-  Future<int> addStation(Station station, int programId) async {
-    final db = await database;
-    final id = await db.insert('stations', station.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-    await db.insert('program_stations', {
-      'program_id': programId,
-      'station_id': station.id,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
-    return id;
-  }
-
-  Future<int> updateStation(Station station) async {
-    final db = await database;
-    return await db.update('stations', station.toMap(), where: 'id = ?', whereArgs: [station.id]);
-  }
-
-  Future<int> deleteStation(int id) async {
-    final db = await database;
-    await db.delete('program_stations', where: 'station_id = ?', whereArgs: [id]);
-    return await db.delete('stations', where: 'id = ?', whereArgs: [id]);
-  }
-
   Future<List<Map<String, dynamic>>> getStationsWithPrograms() async {
     final db = await database;
     return await db.rawQuery('''
@@ -370,5 +282,124 @@ class DatabaseHelper {
       LEFT JOIN program_stations ps ON s.id = ps.station_id
       LEFT JOIN programs p ON ps.program_id = p.id
     ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getEquiposByType(String type) async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT ed.* 
+      FROM equipos_detalle ed
+      INNER JOIN tipos_equipo te ON ed.id_form_fk = te.id_form
+      WHERE te.tipo = ?
+    ''', [type]);
+  }
+
+  // CRUD Operations - Usuarios
+  Future<int> addUsuario(Usuario usuario) async {
+    final db = await database;
+    return await db.insert('usuarios', usuario.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+  Future<int> updateUsuario(Usuario usuario) async {
+    final db = await database;
+    return await db.update('usuarios', usuario.toMap(), where: 'id_usuario = ?', whereArgs: [usuario.idUsuario]);
+  }
+  Future<int> deleteUsuario(int id) async {
+    final db = await database;
+    return await db.delete('usuarios', where: 'id_usuario = ?', whereArgs: [id]);
+  }
+
+  // CRUD Operations - Metodos
+  Future<int> addMetodo(Metodo metodo) async {
+    final db = await database;
+    return await db.insert('metodos', metodo.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+  Future<int> updateMetodo(Metodo metodo) async {
+    final db = await database;
+    return await db.update('metodos', metodo.toMap(), where: 'id_metodo = ?', whereArgs: [metodo.idMetodo]);
+  }
+  Future<int> deleteMetodo(int id) async {
+    final db = await database;
+    return await db.delete('metodos', where: 'id_metodo = ?', whereArgs: [id]);
+  }
+
+  // CRUD Operations - Matrices
+  Future<int> addMatriz(Matriz matriz) async {
+    final db = await database;
+    return await db.insert('matrices', matriz.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+  Future<int> updateMatriz(Matriz matriz) async {
+    final db = await database;
+    return await db.update('matrices', matriz.toMap(), where: 'id_matriz = ?', whereArgs: [matriz.idMatriz]);
+  }
+  Future<int> deleteMatriz(int id) async {
+    final db = await database;
+    return await db.delete('matrices', where: 'id_matriz = ?', whereArgs: [id]);
+  }
+
+  // CRUD Operations - Programas
+  Future<int> addProgram(Program program) async {
+    final db = await database;
+    return await db.insert('programs', program.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+  Future<int> updateProgram(Program program) async {
+    final db = await database;
+    return await db.update('programs', program.toMap(), where: 'id = ?', whereArgs: [program.id]);
+  }
+  Future<int> deleteProgram(int id) async {
+    final db = await database;
+    await db.delete('program_stations', where: 'program_id = ?', whereArgs: [id]);
+    return await db.delete('programs', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // CRUD Operations - Estaciones
+  Future<int> addStation(Station station, int programId) async {
+    final db = await database;
+    final id = await db.insert('stations', station.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    await db.insert('program_stations', {'program_id': programId, 'station_id': station.id}, conflictAlgorithm: ConflictAlgorithm.replace);
+    return id;
+  }
+  Future<int> updateStation(Station station) async {
+    final db = await database;
+    return await db.update('stations', station.toMap(), where: 'id = ?', whereArgs: [station.id]);
+  }
+  Future<int> deleteStation(int id) async {
+    final db = await database;
+    await db.delete('program_stations', where: 'station_id = ?', whereArgs: [id]);
+    return await db.delete('stations', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // CRUD Operations - Equipos
+  Future<List<Map<String, dynamic>>> getAllEquiposWithTipo() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT ed.id, ed.codigo, ed.id_form_fk, te.tipo 
+      FROM equipos_detalle ed
+      LEFT JOIN tipos_equipo te ON ed.id_form_fk = te.id_form
+    ''');
+  }
+
+  Future<int> addEquipo(Map<String, dynamic> equipo) async {
+    final db = await database;
+    return await db.insert('equipos_detalle', equipo, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<int> updateEquipo(Map<String, dynamic> equipo) async {
+    final db = await database;
+    return await db.update('equipos_detalle', equipo, where: 'id = ?', whereArgs: [equipo['id']]);
+  }
+
+  Future<int> deleteEquipo(int id) async {
+    final db = await database;
+    return await db.delete('equipos_detalle', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Registros de Monitoreo
+  Future<int> addRegistroMonitoreo(Map<String, dynamic> registro) async {
+    final db = await database;
+    return await db.insert('registros_monitoreo', registro);
+  }
+  Future<List<Map<String, dynamic>>> getRegistrosMonitoreo() async {
+    final db = await database;
+    return await db.query('registros_monitoreo', orderBy: 'id DESC');
   }
 }

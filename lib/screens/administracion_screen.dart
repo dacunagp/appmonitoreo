@@ -23,11 +23,13 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<Matriz> _matrices = [];
   List<Program> _programas = [];
   List<Map<String, dynamic>> _estacionesConPrograma = [];
+  List<Map<String, dynamic>> _equipos = [];
+  List<TipoEquipo> _tiposEquipo = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(() {
       setState(() {}); // For FAB logic
     });
@@ -46,8 +48,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       final usuarios = await _dbHelper.getUsuarios();
       final metodos = await _dbHelper.getMetodos();
       final matrices = await _dbHelper.getMatrices();
-      final programas = await _dbHelper.getPrograms();
+      final programas = await _dbHelper.getPrograms(); // <-- Esta era la línea que faltaba
       final estaciones = await _dbHelper.getStationsWithPrograms();
+      
+      // Las líneas nuevas de los equipos
+      final equipos = await _dbHelper.getAllEquiposWithTipo();
+      final tiposEquipo = await _dbHelper.getTiposEquipo();
 
       setState(() {
         _usuarios = usuarios;
@@ -55,6 +61,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _matrices = matrices;
         _programas = programas;
         _estacionesConPrograma = estaciones;
+        _equipos = equipos; // Asignamos equipos
+        _tiposEquipo = tiposEquipo; // Asignamos tipos
         _isLoading = false;
       });
     } catch (e) {
@@ -99,6 +107,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     final TextEditingController c2 = TextEditingController();
     final TextEditingController c3 = TextEditingController(); // For lat/long or secondary values
     int? selectedProgramId;
+    int? selectedTipoId;
 
     if (isEdit) {
       if (type == 'Usuario') {
@@ -115,6 +124,9 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         c2.text = item['latitude'].toString();
         c3.text = item['longitude'].toString();
         selectedProgramId = item['program_id'];
+      } else if (type == 'Equipo') {
+        c1.text = item['codigo'];
+        selectedTipoId = item['id_form_fk'];
       }
     }
 
@@ -147,6 +159,15 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                     items: _programas.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(),
                     onChanged: (val) => setDialogState(() => selectedProgramId = val),
                   ),
+                ] else if (type == 'Equipo') ...[
+                  TextField(controller: c1, decoration: const InputDecoration(labelText: 'Código Equipo')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<int>(
+                    value: selectedTipoId,
+                    decoration: const InputDecoration(labelText: 'Categoría de Equipo'),
+                    items: _tiposEquipo.map((t) => DropdownMenuItem(value: t.idForm, child: Text(t.tipo))).toList(),
+                    onChanged: (val) => setDialogState(() => selectedTipoId = val),
+                  ),
                 ],
               ],
             ),
@@ -176,6 +197,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       if (selectedProgramId == null) throw Exception('Debe seleccionar un programa');
                       await _dbHelper.addStation(s, selectedProgramId!);
                     }
+                    final e = {
+                      'id': isEdit ? item['id'] : DateTime.now().millisecondsSinceEpoch % 10000,
+                      'codigo': c1.text,
+                      'id_form_fk': selectedTipoId ?? 0,
+                    };
+                    isEdit ? await _dbHelper.updateEquipo(e) : await _dbHelper.addEquipo(e);
                   }
                   if (mounted) Navigator.pop(context);
                   _loadAllData();
@@ -206,6 +233,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               else if (type == 'Matriz') await _dbHelper.deleteMatriz(id);
               else if (type == 'Programa') await _dbHelper.deleteProgram(id);
               else if (type == 'Estación') await _dbHelper.deleteStation(id);
+              else if (type == 'Equipo') await _dbHelper.deleteEquipo(id);
               if (mounted) Navigator.pop(context);
               _loadAllData();
             },
@@ -243,6 +271,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             Tab(text: 'Matrices'),
             Tab(text: 'Programas'),
             Tab(text: 'Estaciones'),
+            Tab(text: 'Equipos'),
           ],
         ),
       ),
@@ -257,11 +286,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 _buildTabList(_matrices, 'Matriz'),
                 _buildTabList(_programas, 'Programa'),
                 _buildStationsTab(),
+                _buildEquiposTab(),
               ],
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación'];
+          final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo'];
           _showFormDialog(type: types[_tabController.index]);
         },
         child: const Icon(Icons.add),
@@ -326,6 +356,27 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             children: [
               IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormDialog(item: item, type: 'Estación')),
               IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(item['id'], 'Estación')),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEquiposTab() {
+    if (_equipos.isEmpty) return const Center(child: Text('Sin datos'));
+    return ListView.builder(
+      itemCount: _equipos.length,
+      itemBuilder: (context, index) {
+        final item = _equipos[index];
+        return ListTile(
+          title: Text(item['codigo'] ?? 'Sin código'),
+          subtitle: Text('Tipo: ${item['tipo'] ?? 'N/A'}'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(icon: const Icon(Icons.edit, color: Colors.blue), onPressed: () => _showFormDialog(item: item, type: 'Equipo')),
+              IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _confirmDelete(item['id'], 'Equipo')),
             ],
           ),
         );
