@@ -88,7 +88,7 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
     });
   }
 
-  void _onGetDataPressed() {
+  Future<void> _onGetDataPressed() async {
     if (_selectedProgram == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor seleccione un programa')),
@@ -103,13 +103,58 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
       return;
     }
 
-    // Process data logic
-    debugPrint('Programa: ${_selectedProgram?.name}');
-    debugPrint('Estaciones: ${_isAllStationsChecked ? "Todas" : _selectedStations.map((e) => e.name).toList()}');
+    setState(() => _isLoading = true);
+    try {
+      // 1. Prepare stations list
+      List<String> estacionesList;
+      if (_isAllStationsChecked) {
+        estacionesList = await _dbHelper.getEstacionesNombresByPrograma(_selectedProgram!.id);
+      } else {
+        estacionesList = _selectedStations.map((s) => s.name).toList();
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Obteniendo datos...')),
-    );
+      // 2. Perform Sync (POST)
+      final dynamic decodedJson = await _apiService.fetchHistorialMuestras(
+        _selectedProgram!.id.toString(),
+        estacionesList,
+      );
+
+      // 3. Robust Parsing
+      List<dynamic> muestrasToInsert = [];
+      if (decodedJson is List) {
+        // It's already a list of objects
+        muestrasToInsert = decodedJson;
+      } else if (decodedJson is Map<String, dynamic>) {
+        // It's a Map. It might be wrapped (e.g., {"data": [...]}) or just a single object
+        if (decodedJson.containsKey('data') && decodedJson['data'] is List) {
+          muestrasToInsert = decodedJson['data'];
+        } else if (decodedJson.containsKey('muestras') && decodedJson['muestras'] is List) {
+          muestrasToInsert = decodedJson['muestras'];
+        } else {
+          // Treat as a single object response and wrap it in a list
+          muestrasToInsert = [decodedJson];
+        }
+      }
+
+      // 4. Save to DB
+      await _dbHelper.insertHistorialMuestras(muestrasToInsert);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Se sincronizaron ${muestrasToInsert.length} registros')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al obtener datos: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -347,15 +392,18 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
             ),
           ),
           const SizedBox(height: 50),
-          OutlinedButton(
-            onPressed: _onGetDataPressed,
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              side: const BorderSide(color: Colors.blue),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else
+            OutlinedButton(
+              onPressed: _onGetDataPressed,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                side: const BorderSide(color: Colors.blue),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('OBTENER DATOS'),
             ),
-            child: const Text('OBTENER DATOS'),
-          ),
         ],
       ),
     );

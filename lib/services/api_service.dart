@@ -39,4 +39,33 @@ class ApiService {
   Future<Map<String, dynamic>> fetchPrograms() async {
     return fetchAllData();
   }
+
+  Future<dynamic> fetchHistorialMuestras(String programa, List<String> estaciones) async {
+    final String basicAuth = 'Basic ${base64Encode(utf8.encode(_auth))}';
+    final url = '$_baseUrl/muestras'; // Assuming relative to _baseUrl or absolute
+    // Re-check base URL: https://gpconsultores.cl/apicollector/sync.php?endpoint=
+    final fullUrl = 'https://gpconsultores.cl/apicollector/sync.php?endpoint=muestras';
+
+    try {
+      final response = await http.post(
+        Uri.parse(fullUrl),
+        headers: {
+          'Authorization': basicAuth,
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({
+          'programa': programa,
+          'estaciones': estaciones,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Failed to fetch muestras: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('API Error: $e');
+    }
+  }
 }

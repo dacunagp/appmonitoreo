@@ -114,6 +114,22 @@ class DatabaseHelper {
         FOREIGN KEY (usuario_id) REFERENCES usuarios (id_usuario)
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE historial_muestras (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        certificado TEXT,
+        fecha TEXT,
+        nivel REAL,
+        caudal REAL,
+        ph REAL,
+        temperatura REAL,
+        conductividad REAL,
+        oxigeno REAL,
+        SDT REAL,
+        estacion TEXT
+      )
+    ''');
   }
 
   Future<void> syncData(Map<String, dynamic> allData) async {
@@ -445,5 +461,43 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  // Historial de Muestras
+  Future<void> insertHistorialMuestras(List<dynamic> muestras) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('historial_muestras');
+      for (var m in muestras) {
+        await txn.insert('historial_muestras', {
+          'certificado': m['certificado'],
+          'fecha': m['fecha'],
+          'nivel': m['nivel'],
+          'caudal': m['caudal'],
+          'ph': m['ph'],
+          'temperatura': m['temperatura'],
+          'conductividad': m['conductividad'],
+          'oxigeno': m['oxigeno'],
+          'SDT': m['SDT'],
+          'estacion': m['estacion'],
+        });
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getHistorialMuestras() async {
+    final db = await database;
+    return await db.query('historial_muestras', orderBy: 'fecha DESC');
+  }
+
+  Future<List<String>> getEstacionesNombresByPrograma(int programaId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> res = await db.rawQuery('''
+      SELECT s.name 
+      FROM stations s
+      JOIN program_stations ps ON s.id = ps.station_id
+      WHERE ps.program_id = ?
+    ''', [programaId]);
+    return res.map((row) => row['name'] as String).toList();
   }
 }
