@@ -27,6 +27,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   List<Map<String, dynamic>> _equiposMulti = [];
   List<Map<String, dynamic>> _turbidimetros = [];
   List<Metodo> _metodos = [];
+  String? _inspectorSeleccionado;
+  List<String> _inspectoresOptions = [];
+  List<String> _equiposMultiOptions = [];
+  List<String> _turbidimetrosOptions = [];
 
   // Selecciones (Objetos o IDs para lógica interna)
   Program? _programaSeleccionado;
@@ -72,15 +76,17 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       final programas = await _dbHelper.getPrograms();
       final matrices = await _dbHelper.getMatrices();
       final metodos = await _dbHelper.getMetodos();
-      final equiposMulti = await _dbHelper.getEquiposByType('Multiparámetro'); // Usando el tipo exacto
-      final turbidimetros = await _dbHelper.getEquiposByType('Turbidímetro');
+      final usuarios = await _dbHelper.getUsuarios();
+      final equiposMulti = await _dbHelper.getEquiposByType('Pozómetro');
+      final turbidimetros = await _dbHelper.getEquiposByType('Turbidimetro');
 
       setState(() {
         _programas = programas;
         _matrices = matrices;
         _metodos = metodos;
-        _equiposMulti = equiposMulti;
-        _turbidimetros = turbidimetros;
+        _inspectoresOptions = usuarios.map((u) => '${u.nombre} ${u.apellido}').toList();
+        _equiposMultiOptions = equiposMulti.map((e) => e['codigo'] as String).toList();
+        _turbidimetrosOptions = turbidimetros.map((e) => e['codigo'] as String).toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -194,10 +200,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 label: 'Equipo Multiparametro',
                 hintText: 'Seleccione equipo',
                 selectedValue: _equipoMultiSeleccionado?['codigo'],
-                options: _equiposMulti.map((e) => e['codigo'] as String).toList(),
+                options: _equiposMultiOptions,
                 isDarkMode: isDarkMode,
                 onChanged: (val) {
-                  setState(() => _equipoMultiSeleccionado = _equiposMulti.firstWhere((e) => e['codigo'] == val));
+                  setState(() => _equipoMultiSeleccionado = {'codigo': val, 'id': 0}); // Simplified mapping
                 },
               ),
               if (_equipoMultiSeleccionado != null) ...[
@@ -215,10 +221,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 label: 'Turbidimetro',
                 hintText: 'Seleccione equipo',
                 selectedValue: _turbidimetroSeleccionado?['codigo'],
-                options: _turbidimetros.map((e) => e['codigo'] as String).toList(),
+                options: _turbidimetrosOptions,
                 isDarkMode: isDarkMode,
                 onChanged: (val) {
-                  setState(() => _turbidimetroSeleccionado = _turbidimetros.firstWhere((e) => e['codigo'] == val));
+                  setState(() => _turbidimetroSeleccionado = {'codigo': val, 'id': 0}); // Simplified mapping
                 },
               ),
               if (_turbidimetroSeleccionado != null)
@@ -314,7 +320,14 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             },
           ),
           
-          CustomFormRow(label: 'Inspector', value: 'Seleccione inspector', isValid: false, isDarkMode: isDarkMode),
+          SearchableDropdown(
+            label: 'Inspector',
+            hintText: 'Seleccione inspector',
+            selectedValue: _inspectorSeleccionado,
+            options: _inspectoresOptions,
+            isDarkMode: isDarkMode,
+            onChanged: (val) => setState(() => _inspectorSeleccionado = val),
+          ),
           
           SearchableDropdown(
             label: 'Matriz de Aguas',
