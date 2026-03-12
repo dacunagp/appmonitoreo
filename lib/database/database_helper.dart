@@ -415,4 +415,14 @@ class DatabaseHelper {
     final db = await database;
     return await db.query('registros_monitoreo', orderBy: 'id DESC');
   }
+
+  Future<int> deleteRegistroMonitoreo(int id) async {
+    final db = await database;
+    return await db.delete('registros_monitoreo', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> deleteAllRegistrosMonitoreo() async {
+    final db = await database;
+    return await db.delete('registros_monitoreo');
+  }
 }

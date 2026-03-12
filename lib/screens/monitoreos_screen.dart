@@ -75,7 +75,10 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
         title: const Text('Monitoreos'),
         actions: [
           IconButton(icon: const Icon(Icons.filter_list), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.delete_outline), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.delete_outline), 
+            onPressed: () => _confirmarEliminarTodo(context),
+          ),
           IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
         ],
       ),
@@ -119,21 +122,43 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                         separatorBuilder: (ctx, i) => const Divider(height: 1),
                         itemBuilder: (ctx, index) {
                           final item = _filteredMonitoreos[index];
-                          return ListTile(
-                            leading: const Icon(Icons.location_on, color: Colors.blueAccent, size: 28),
-                            title: Text(item['estacion_name'] ?? 'Sin Estación', style: const TextStyle(fontWeight: FontWeight.w500)),
-                            subtitle: Text(_formatDate(item['fecha_hora'] ?? '')),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.done_all, color: Colors.green, size: 20),
-                                const SizedBox(width: 8),
-                                Icon(Icons.chevron_right, color: colorGris),
-                              ],
+                          return Dismissible(
+                            key: Key(item['id'].toString()),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              color: Colors.red,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              child: const Icon(Icons.delete, color: Colors.white),
                             ),
-                            onTap: () {
-                              // Ver detalle
+                            onDismissed: (direction) async {
+                              await _dbHelper.deleteRegistroMonitoreo(item['id']);
+                              setState(() {
+                                _monitoreos.removeWhere((m) => m['id'] == item['id']);
+                                _filterMonitoreos(); // Refresh filtered list
+                              });
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Registro eliminado')),
+                                );
+                              }
                             },
+                            child: ListTile(
+                              leading: const Icon(Icons.location_on, color: Colors.blueAccent, size: 28),
+                              title: Text(item['estacion_name'] ?? 'Sin Estación', style: const TextStyle(fontWeight: FontWeight.w500)),
+                              subtitle: Text(_formatDate(item['fecha_hora'] ?? '')),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.done_all, color: Colors.green, size: 20),
+                                  const SizedBox(width: 8),
+                                  Icon(Icons.chevron_right, color: colorGris),
+                                ],
+                              ),
+                              onTap: () {
+                                // Ver detalle
+                              },
+                            ),
                           );
                         },
                       ),
@@ -141,5 +166,38 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmarEliminarTodo(BuildContext context) async {
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Todos los Registros', style: TextStyle(color: Colors.red)),
+        content: const Text('¿Está seguro de que desea eliminar TODOS los monitoreos guardados localmente? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCELAR', style: TextStyle(color: Colors.blueAccent)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ELIMINAR', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      await _dbHelper.deleteAllRegistrosMonitoreo();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Todos los registros eliminados'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _loadMonitoreos();
+      }
+    }
   }
 }
