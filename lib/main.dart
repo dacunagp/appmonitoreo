@@ -16,6 +16,7 @@ import 'screens/estaciones_screen.dart';
 import 'screens/campanas_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/administracion_screen.dart';
+import 'screens/exportar_bd_screen.dart';
 
 void main() async {
   // 1. Aseguramos que Flutter esté listo antes de ejecutar código asíncrono
@@ -59,6 +60,7 @@ class MonitoreoApp extends StatelessWidget {
         '/campanas': (context) => const CampanasScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/administracion': (context) => const AdministracionScreen(),
+        '/exportar_bd': (context) => const ExportarBDScreen(),
       },
     );
   }

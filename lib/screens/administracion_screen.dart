@@ -155,8 +155,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre Programa')),
                 ] else if (type == 'Estación') ...[
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre')),
-                  TextField(controller: c2, decoration: const InputDecoration(labelText: 'Norte'), keyboardType: TextInputType.number),
-                  TextField(controller: c3, decoration: const InputDecoration(labelText: 'Este'), keyboardType: TextInputType.number),
+                  TextField(controller: c2, decoration: const InputDecoration(labelText: 'Latitud'), keyboardType: TextInputType.number),
+                  TextField(controller: c3, decoration: const InputDecoration(labelText: 'Longitud'), keyboardType: TextInputType.number),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
                     value: selectedProgramId,
@@ -181,6 +181,23 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCELAR')),
             ElevatedButton(
               onPressed: () async {
+                // Validación de campos vacíos
+                if (type == 'Usuario') {
+                  if (c1.text.trim().isEmpty || c2.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Por favor, rellene todos los campos (Nombre y Apellido).'), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+                } else if (type == 'Método' || type == 'Matriz' || type == 'Programa') {
+                  if (c1.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Por favor, ingrese el nombre del registro.'), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+                }
+
                 try {
                   if (type == 'Usuario') {
                     final u = Usuario(idUsuario: isEdit ? (item as Usuario).idUsuario : DateTime.now().millisecondsSinceEpoch % 10000, nombre: c1.text, apellido: c2.text);
@@ -354,25 +371,25 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
 
               if (type == 'Usuario') {
                 title = '${item.nombre} ${item.apellido}';
-                subtitle = 'ID: ${item.idUsuario}';
+                subtitle = ''; // ID oculto por requerimiento
                 id = item.idUsuario;
               } else if (type == 'Método') {
                 title = item.metodo;
-                subtitle = 'ID: ${item.idMetodo}';
+                subtitle = ''; // ID oculto por requerimiento
                 id = item.idMetodo;
               } else if (type == 'Matriz') {
                 title = item.nombreMatriz;
-                subtitle = 'ID: ${item.idMatriz}';
+                subtitle = ''; // ID oculto por requerimiento
                 id = item.idMatriz;
               } else if (type == 'Programa') {
                 title = item.name;
-                subtitle = 'ID: ${item.id}';
+                subtitle = ''; // ID oculto por requerimiento
                 id = item.id;
               }
 
               return ListTile(
-                title: Text(title),
-                subtitle: Text(subtitle),
+                title: Text(title, textAlign: TextAlign.left),
+                subtitle: subtitle.isNotEmpty ? Text(subtitle, textAlign: TextAlign.left) : null,
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
