@@ -1,8 +1,17 @@
-// ignore_for_file: deprecated_member_use
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:screenshot/screenshot.dart';
+import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 import '../widgets/app_drawer.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
+import 'package:flutter/services.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
@@ -19,7 +28,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isMonitoreoFallido = false;
+  bool _isProcessingImage = false;
   DateTime? _fechaYHoraMuestreo; 
+  String? _imagePath;
+  final ImagePicker _picker = ImagePicker();
+  final ScreenshotController _screenshotController = ScreenshotController();
 
   // Listas para dropdowns
   List<Program> _programas = [];
@@ -172,6 +185,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       _condController.text = data['conductividad']?.toString() ?? '';
       _oxigenoController.text = data['oxigeno']?.toString() ?? '';
       _turbiedadController.text = data['turbiedad']?.toString() ?? '';
+      _imagePath = data['foto_path'];
     });
 
     // Special case: Load stations if program is selected
@@ -245,6 +259,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'isotopico': _muestreoIsotopico == true ? 1 : 0,
         'cod_laboratorio': _codLabController.text,
         'usuario_id': inspectorId,
+        'foto_path': _imagePath,
       };
 
       // 3. Persistence
@@ -472,10 +487,393 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
           if (_isMonitoreoFallido)
             CustomTextInputRow(label: 'Descripción / Observación', hintText: 'Ingrese observación / descripción', isDarkMode: isDarkMode, maxLines: null, controller: _obsController),
+          
+          _buildPhotoPreview(isDarkMode),
+          
           const SizedBox(height: 8),
         ],
       ),
     );
+  }
+
+  Widget _buildPhotoPreview(bool isDarkMode) {
+    if (_isProcessingImage) {
+      return Container(
+        height: 200,
+        margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[900] : Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(strokeWidth: 3, color: Colors.blueAccent),
+            const SizedBox(height: 20),
+            Text(
+              "CALIBRANDO RESOLUCIÓN ORIGINAL...",
+              style: TextStyle(
+                color: Colors.blueAccent.withOpacity(0.8),
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "ELIMINANDO DESBORDAMIENTOS",
+              style: TextStyle(
+                color: Colors.grey.withOpacity(0.6),
+                fontSize: 9,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_imagePath == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _pickImage(ImageSource.camera),
+            icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+            label: const Text("CAPTURAR RESPALDO FOTOGRÁFICO", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueAccent,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      );
+    } else {
+      return Container(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "EVIDENCIA CAPTURADA",
+              style: TextStyle(color: Colors.blueAccent, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1),
+            ),
+            const SizedBox(height: 12),
+            AspectRatio(
+              aspectRatio: 4 / 3,
+              child: Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12.0),
+                    child: Image.file(
+                      File(_imagePath!),
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: GestureDetector(
+                      onTap: _removeImage,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.black45,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _pickImage(ImageSource.camera),
+                    icon: const Icon(Icons.refresh, color: Colors.blueAccent, size: 16),
+                    label: const Text("RECAPTURAR", style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(width: 16),
+                  TextButton.icon(
+                    onPressed: _sharePhoto,
+                    icon: const Icon(Icons.share, color: Colors.green, size: 16),
+                    label: const Text("VERIFICAR", style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  // _buildPhotoSection is removed as it is replaced by _buildPhotoPreview
+
+  Future<Position?> _getCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Los servicios de ubicación están desactivados.')),
+        );
+      }
+      return null;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Permisos de ubicación denegados.')),
+          );
+        }
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permisos de ubicación denegados permanentemente.')),
+        );
+      }
+      return null;
+    }
+
+    return await Geolocator.getCurrentPosition();
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    // Strictly follow hardware source
+    if (source != ImageSource.camera) return;
+
+    try {
+      final XFile? pickerImage = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+      );
+
+      if (pickerImage != null) {
+        Position? position = await _getCurrentLocation();
+        if (position != null) {
+          // Pass the file to the high-res processing method
+          await _processImageWithStamp(File(pickerImage.path), position);
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Se requiere GPS para estampar la fotografía.')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al capturar foto: $e')),
+        );
+      }
+    }
+  }
+
+
+  Future<void> _processImageWithStamp(File imageFile, Position position) async {
+    setState(() => _isProcessingImage = true);
+
+    try {
+      final String timestamp = _formatearFechaYHora(DateTime.now());
+      final String lat = position.latitude.toStringAsFixed(6);
+      final String lon = position.longitude.toStringAsFixed(6);
+      final String estacion = (_estacionSeleccionada?.name ?? "PUNTO DE CONTROL NO ESPECIFICADO").toUpperCase();
+
+      // 1. HARDWARE-NATIVE DIMENSION HANDLING
+      final Uint8List mainBytes = await imageFile.readAsBytes();
+      final ui.Codec codec = await ui.instantiateImageCodec(mainBytes);
+      final ui.FrameInfo frameInfo = await codec.getNextFrame();
+      final double imgWidth = frameInfo.image.width.toDouble();
+      final double imgHeight = frameInfo.image.height.toDouble();
+
+      // 2. ASSET PRE-LOADING (CRITICAL: Fixes red 'X' issue in captureFromWidget)
+      final ByteData data = await rootBundle.load('assets/gp-blanco-centrado.png');
+      final Uint8List logoBytes = data.buffer.asUint8List();
+
+      // STRICT PROPORTIONAL SCALING (MANDATORY REQUIREMENTS)
+      final double dynamicFontSize = imgWidth * 0.02; // Small & Professional 2%
+      final double bannerHeight = imgHeight * 0.12;   // Strictly 12% height limit
+      final double logoSize = imgWidth * 0.20;        // Logo at 20% of width
+      final double margin = imgWidth * 0.04;          // Proportional margin
+
+      final stampWidget = Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: imgWidth,
+          height: imgHeight,
+          child: Stack(
+            children: [
+              // Original Image at Native Resolution
+              Image.memory(
+                mainBytes,
+                width: imgWidth,
+                height: imgHeight,
+                fit: BoxFit.cover,
+              ),
+
+              // --- LOGO TOP LEFT (Pre-loaded Memory Image) ---
+              Positioned(
+                top: margin,
+                left: margin,
+                child: SizedBox(
+                  width: logoSize,
+                  height: logoSize,
+                  child: Image.memory(
+                    logoBytes,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+
+              // --- 3-LINE CENTERED METADATA BANNER ---
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: bannerHeight,
+                  width: imgWidth,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.85),
+                      ],
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        estacion,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: dynamicFontSize * 1.5,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                          shadows: const [Shadow(blurRadius: 10, color: Colors.black)],
+                          decoration: TextDecoration.none,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: bannerHeight * 0.08),
+                      Text(
+                        "Lat: $lat | Long: $lon",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: dynamicFontSize,
+                          fontWeight: FontWeight.w500,
+                          shadows: const [Shadow(blurRadius: 5, color: Colors.black)],
+                          decoration: TextDecoration.none,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: bannerHeight * 0.04),
+                      Text(
+                        timestamp,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: dynamicFontSize * 0.8,
+                          fontWeight: FontWeight.w400,
+                          decoration: TextDecoration.none,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // 3. PIXEL-PERFECT CAPTURE (Forced 1:1 Pixel Mapping)
+      final Uint8List stampedBytes = await _screenshotController.captureFromWidget(
+        stampWidget,
+        delay: const Duration(milliseconds: 500),
+        pixelRatio: 1.0, 
+        targetSize: Size(imgWidth, imgHeight), // Direct image pixel targeting
+      );
+
+      final directory = await getApplicationDocumentsDirectory();
+      final String fileName = 'EVIDENCIA_TECNICA_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String filePath = p.join(directory.path, fileName);
+      
+      final File processedFile = File(filePath);
+      await processedFile.writeAsBytes(stampedBytes);
+
+      setState(() {
+        _imagePath = filePath;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error en puente técnico: $e')),
+        );
+      }
+      debugPrint("STAMP ERROR: $e");
+    } finally {
+      if (mounted) setState(() => _isProcessingImage = false);
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _imagePath = null;
+    });
+  }
+
+  Future<void> _sharePhoto() async {
+    if (_imagePath == null) return;
+    
+    try {
+      final XFile file = XFile(_imagePath!);
+      await Share.shareXFiles(
+        [file], 
+        text: 'EVIDENCIA MONITOREO - ${_estacionSeleccionada?.name ?? "PTO"}',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al compartir: $e')),
+        );
+      }
+    }
+  }
+
+  void _showPickImageOptions() {
+    // This method is now obsolete but kept to avoid breaking changes if called elsewhere
+    // In strict mode, we only use camera.
+    _pickImage(ImageSource.camera);
   }
 
   Widget _buildSectionTile(String title, bool isDarkMode, List<Widget> children) {

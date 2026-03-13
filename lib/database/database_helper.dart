@@ -20,9 +20,16 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'collector.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE registros_monitoreo ADD COLUMN foto_path TEXT');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -111,6 +118,7 @@ class DatabaseHelper {
         isotopico INTEGER,
         cod_laboratorio TEXT,
         usuario_id INTEGER,
+        foto_path TEXT,
         FOREIGN KEY (usuario_id) REFERENCES usuarios (id_usuario)
       )
     ''');
