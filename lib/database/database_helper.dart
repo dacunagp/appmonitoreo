@@ -121,8 +121,15 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. Flattened Catalogs
-    await db.execute('CREATE TABLE equipos (id INTEGER PRIMARY KEY, codigo TEXT NOT NULL, tipo TEXT NOT NULL)');
+    // 4. Flattened Catalogs (Updated with id_form_fk)
+    await db.execute('''
+      CREATE TABLE equipos (
+        id INTEGER PRIMARY KEY, 
+        codigo TEXT NOT NULL, 
+        tipo TEXT NOT NULL,
+        id_form_fk INTEGER
+      )
+    ''');
 
     // 5. Parametros 
     await db.execute('''
@@ -430,7 +437,12 @@ class DatabaseHelper {
   }
   Future<int> deleteParametro(int id) async => database.then((db) => db.delete('parametros', where: 'id = ?', whereArgs: [id]));
 
-  Future<int> addEquipo(Map<String, dynamic> item) async => database.then((db) => db.insert('equipos', item));
+  Future<int> addEquipo(Map<String, dynamic> item) async {
+    final db = await database;
+    final Map<String, dynamic> cleanItem = Map<String, dynamic>.from(item);
+    cleanItem['tipo'] ??= 'General'; 
+    return await db.insert('equipos', cleanItem);
+  }
   Future<int> updateEquipo(Map<String, dynamic> item) async => database.then((db) => db.update('equipos', item, where: 'id = ?', whereArgs: [item['id']]));
   Future<int> deleteEquipo(int id) async => database.then((db) => db.delete('equipos', where: 'id = ?', whereArgs: [id]));
 
@@ -534,7 +546,8 @@ class DatabaseHelper {
             batch.insert('equipos', {
               'id': eq['id'] ?? 0, 
               'codigo': eq['codigo']?.toString() ?? 'S/N', 
-              'tipo': tipoEquipo
+              'tipo': tipoEquipo,
+              'id_form_fk': eq['id_form_fk'] ?? 0
             });
           }
         }

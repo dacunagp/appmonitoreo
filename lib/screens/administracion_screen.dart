@@ -278,10 +278,14 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       if (selectedProgramId == null) throw Exception('Debe seleccionar un programa');
                       await _dbHelper.addStation(s, selectedProgramId!);
                     }
+                  } else if (type == 'Equipo') {
                     final e = {
                       'id': isEdit ? item['id'] : DateTime.now().millisecondsSinceEpoch % 10000,
                       'codigo': c1.text,
                       'id_form_fk': selectedTipoId ?? 0,
+                      'tipo': selectedTipoId != null 
+                              ? _tiposEquipo.firstWhere((t) => t.idForm == selectedTipoId, orElse: () => TipoEquipo(idForm: 0, tipo: 'General')).tipo 
+                              : 'General',
                     };
                     isEdit ? await _dbHelper.updateEquipo(e) : await _dbHelper.addEquipo(e);
                   } else if (type == 'Parámetro') {
