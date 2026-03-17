@@ -85,6 +85,16 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
         ],
       ),
       drawer: const AppDrawer(currentRoute: '/monitoreos'),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const RegistrarMonitoreoScreen()),
+          ).then((_) => _loadMonitoreos());
+        },
+        backgroundColor: Colors.blueAccent,
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
       body: Column(
         children: [
           // 1. Modern Pill Search Bar
@@ -164,6 +174,13 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         itemBuilder: (ctx, index) {
                           final item = _filteredMonitoreos[index];
+                          final bool isDraft = item['is_draft'] == 1;
+                          final bool isFallido = item['monitoreo_fallido'] == 'true' || item['monitoreo_fallido'] == 1 || item['monitoreo_fallido'] == 'SI';
+                          
+                          final String stationName = item['estacion_name'] ?? item['estacion_id']?.toString() ?? 'Sin Estación';
+                          final String fechaStr = item['fecha_hora'] ?? item['fecha'] ?? 'Sin Fecha';
+                          final String fecha = fechaStr.contains('T') ? fechaStr.split('T')[0] : fechaStr;
+
                           return Padding(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 6),
@@ -201,57 +218,40 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                   contentPadding: const EdgeInsets.symmetric(
                                       horizontal: 16, vertical: 8),
                                   leading: CircleAvatar(
-                                    backgroundColor:
-                                        Colors.blueAccent.withAlpha(20),
-                                    child: const Icon(Icons.location_on,
-                                        color: Colors.blueAccent),
+                                    backgroundColor: isDraft 
+                                        ? Colors.orangeAccent 
+                                        : (isFallido ? Colors.redAccent : Colors.green),
+                                    child: Icon(
+                                      isDraft ? Icons.edit_note : (isFallido ? Icons.error : Icons.check),
+                                      color: Colors.white,
+                                    ),
                                   ),
-                                  title: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          item['estacion_name'] ?? 'Sin Estación',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      if (item['is_draft'] == 1) ...[
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.orange.withOpacity(0.2),
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: const Text(
-                                            'BORRADOR',
-                                            style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
+                                  title: Text(
+                                    'Punto: $stationName',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   subtitle: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       const SizedBox(height: 4),
                                       Text(
-                                        _formatDate(item['fecha_hora'] ?? ''),
+                                        'Fecha: $fecha',
                                         style: TextStyle(color: colorGris, fontSize: 13),
                                       ),
                                     ],
                                   ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (item['is_draft'] == 1)
-                                        const Icon(Icons.edit_note, color: Colors.orange, size: 20)
-                                      else
-                                        const Icon(Icons.done_all, color: Colors.green, size: 18),
-                                      const SizedBox(width: 4),
-                                      Icon(Icons.chevron_right, color: colorGris, size: 20),
-                                    ],
-                                  ),
+                                  trailing: isDraft
+                                      ? Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(color: Colors.orange),
+                                          ),
+                                          child: const Text('BORRADOR', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        )
+                                      : const Icon(Icons.arrow_forward_ios, size: 16),
                                   onTap: () {
                                     Navigator.push(
                                       context,

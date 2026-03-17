@@ -71,12 +71,30 @@ class DatabaseHelper {
     await _log('🏗️ [SCHEMA] Construyendo tablas de la base de datos...');
     
     // 1. Long Format & Drafts
+    // 🚨 AQUÍ ESTÁ EL FIX: La tabla ahora soporta absolutamente todos los datos del formulario
     await db.execute('''
       CREATE TABLE monitoreos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, estacion_id TEXT NOT NULL, fecha TEXT NOT NULL, 
-        inspector TEXT, monitoreo_fallido TEXT, is_draft INTEGER DEFAULT 0
+        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        programa_id INTEGER,
+        estacion_id INTEGER, 
+        fecha_hora TEXT, 
+        monitoreo_fallido INTEGER, 
+        observacion TEXT,
+        matriz_id INTEGER,
+        equipo_multi_id INTEGER,
+        turbidimetro_id INTEGER,
+        metodo_id INTEGER,
+        hidroquimico INTEGER,
+        isotopico INTEGER,
+        cod_laboratorio TEXT,
+        usuario_id INTEGER,
+        foto_path TEXT,
+        foto_multiparametro TEXT,
+        foto_turbiedad TEXT,
+        is_draft INTEGER DEFAULT 0
       )
     ''');
+    
     await db.execute('''
       CREATE TABLE historial_mediciones (
         id INTEGER PRIMARY KEY AUTOINCREMENT, monitoreo_id INTEGER, estacion TEXT NOT NULL, 
@@ -179,7 +197,8 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getMonitoreosList() async {
     final db = await database;
-    return await db.query('monitoreos', orderBy: 'fecha DESC');
+    // 🚨 FIX: Cambiamos 'fecha' por 'fecha_hora'
+    return await db.query('monitoreos', orderBy: 'fecha_hora DESC');
   }
 
   Future<Map<String, dynamic>?> getRegistroMonitoreoById(int id) async {
@@ -201,6 +220,36 @@ class DatabaseHelper {
   Future<int> deleteAllRegistrosMonitoreo() async {
     final db = await database;
     return await db.delete('monitoreos');
+  }
+  
+  Future<int> saveMonitoreoTransaction(Map<String, dynamic> header, List<Map<String, dynamic>> detalles) async {
+    final db = await database;
+    int monitoreoId = header['id'] ?? 0;
+    String estacion = header['estacion_id']?.toString() ?? 'S/N';
+    String fecha = header['fecha_hora']?.toString() ?? DateTime.now().toIso8601String();
+
+    await db.transaction((txn) async {
+      // 1. Insert or Update Header
+      if (monitoreoId == 0) {
+        header.remove('id'); // Double safeguard to ensure auto-increment
+        monitoreoId = await txn.insert('monitoreos', header);
+      } else {
+        await txn.update('monitoreos', header, where: 'id = ?', whereArgs: [monitoreoId]);
+        // Remove old details for this monitoreo during update to sync
+        await txn.delete('historial_mediciones', where: 'monitoreo_id = ?', whereArgs: [monitoreoId]);
+      }
+      
+      // 2. Insert Details (Parameters)
+      for (var detalle in detalles) {
+        detalle['monitoreo_id'] = monitoreoId;
+        // Ensure station and date are available in detail if not provided
+        detalle['estacion'] ??= estacion;
+        detalle['fecha'] ??= fecha;
+        await txn.insert('historial_mediciones', detalle);
+      }
+    });
+    
+    return monitoreoId;
   }
 
   // --- STRONGLY TYPED CATALOG METHODS ---
@@ -278,16 +327,24 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getStationsWithPrograms() async {
     final db = await database;
+    // 🛡️ BLINDAJE SQL: 
+    // 1. COALESCE asegura que NUNCA devuelva un 'null' a la pantalla.
+    // 2. Devolvemos las llaves en inglés (name) Y en español (estacion) 
+    //    para que la UI no falle sin importar cuál esté usando.
+    // 3. LEFT JOIN asegura que las estaciones sin programa no rompan la app.
     return await db.rawQuery('''
       SELECT 
         s.id, 
-        s.name AS estacion, 
-        s.latitude AS latitud, 
-        s.longitude AS longitud, 
-        p.name AS program_name 
+        COALESCE(s.name, 'Sin nombre') AS name, 
+        COALESCE(s.name, 'Sin nombre') AS estacion, 
+        COALESCE(s.latitude, 0.0) AS latitude, 
+        COALESCE(s.latitude, 0.0) AS latitud, 
+        COALESCE(s.longitude, 0.0) AS longitude, 
+        COALESCE(s.longitude, 0.0) AS longitud, 
+        COALESCE(p.name, 'Sin Programa') AS program_name 
       FROM stations s
-      INNER JOIN program_stations ps ON s.id = ps.station_id
-      INNER JOIN programs p ON ps.program_id = p.id
+      LEFT JOIN program_stations ps ON s.id = ps.station_id
+      LEFT JOIN programs p ON ps.program_id = p.id
     ''');
   }
 

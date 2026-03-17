@@ -134,6 +134,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   void _onFieldChanged() {
+    // Force UI to rebuild to show green checks immediately as the user types
+    setState(() {}); 
+
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(seconds: 2), () {
       _saveAsDraft();
@@ -143,51 +146,96 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   Future<void> _saveAsDraft() async {
     // Only save as draft if at least some basic info is selected
     if (_programaSeleccionado == null && _estacionSeleccionada == null) return;
-
-    // Find Inspector ID
-    int? inspectorId;
-    if (_inspectorSeleccionado != null) {
-      final usuarios = await _dbHelper.getUsuarios();
-      try {
-        final inspector = usuarios.firstWhere((u) => '${u.nombre} ${u.apellido}' == _inspectorSeleccionado);
-        inspectorId = inspector.idUsuario;
-      } catch (_) {}
-    }
-
-    final Map<String, dynamic> data = {
-      'programa_id': _programaSeleccionado?.id,
-      'estacion_id': _estacionSeleccionada?.id,
-      'fecha_hora': _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String(),
-      'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
-      'observacion': _obsController.text,
-      'matriz_id': _matrizSeleccionada?.idMatriz,
-      'equipo_multi_id': _equiposMulti.any((e) => e.codigo == _equipoMultiparametroSeleccionado) ? _equiposMulti.firstWhere((e) => e.codigo == _equipoMultiparametroSeleccionado).id : null,
-      'temp': double.tryParse(_tempController.text),
-      'ph': double.tryParse(_phController.text),
-      'conductividad': double.tryParse(_condController.text),
-      'oxigeno': double.tryParse(_oxigenoController.text),
-      'turbidimetro_id': _turbidimetros.any((e) => e.codigo == _turbidimetroSeleccionado) ? _turbidimetros.firstWhere((e) => e.codigo == _turbidimetroSeleccionado).id : null,
-      'turbiedad': double.tryParse(_turbiedadController.text),
-      'metodo_id': _metodoSeleccionado?.idMetodo,
-      'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
-      'isotopico': _muestreoIsotopico == true ? 1 : 0,
-      'cod_laboratorio': _codLabController.text,
-      'usuario_id': inspectorId,
-      'foto_path': _imagePath,
-      'foto_multiparametro': _fotoMultiparametroPath,
-      'foto_turbiedad': _fotoTurbiedadPath,
-      'is_draft': 1,
-      'last_modified': DateTime.now().toIso8601String(),
-    };
-
-    if (_currentRegistroId == null) {
-      final id = await _dbHelper.addRegistroMonitoreo(data);
-      setState(() => _currentRegistroId = id);
-    } else {
-      await _dbHelper.updateRegistroMonitoreo(_currentRegistroId!, data);
-    }
-    
+    await _guardarInterno(isDraft: true);
     debugPrint('Borrador auto-guardado id: $_currentRegistroId');
+  }
+
+  Future<void> _guardarInterno({required bool isDraft}) async {
+    try {
+      // 1. Build Header Map
+      int? inspectorId;
+      if (_inspectorSeleccionado != null) {
+        final usuarios = await _dbHelper.getUsuarios();
+        try {
+          final inspector = usuarios.firstWhere((u) => '${u.nombre} ${u.apellido}' == _inspectorSeleccionado);
+          inspectorId = inspector.idUsuario;
+        } catch (_) {}
+      }
+
+      final Map<String, dynamic> header = {
+        'id': _currentRegistroId,
+        'programa_id': _programaSeleccionado?.id,
+        'estacion_id': _estacionSeleccionada?.id,
+        'fecha_hora': _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String(),
+        'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
+        'observacion': _obsController.text,
+        'matriz_id': _matrizSeleccionada?.idMatriz,
+        'equipo_multi_id': _equiposMulti.where((e) => e.codigo == _equipoMultiparametroSeleccionado).firstOrNull?.id,
+        'turbidimetro_id': _turbidimetros.where((e) => e.codigo == _turbidimetroSeleccionado).firstOrNull?.id,
+        'metodo_id': _metodoSeleccionado?.idMetodo,
+        'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
+        'isotopico': _muestreoIsotopico == true ? 1 : 0,
+        'cod_laboratorio': _codLabController.text,
+        'usuario_id': inspectorId,
+        'foto_path': _imagePath,
+        'foto_multiparametro': _fotoMultiparametroPath,
+        'foto_turbiedad': _fotoTurbiedadPath,
+        'is_draft': isDraft ? 1 : 0,
+      };
+
+      // CRITICAL FIX: Remove 'id' if null so SQLite auto-increments properly
+      if (header['id'] == null) {
+        header.remove('id');
+      }
+
+      // 2. Build Details List (Parameters)
+      List<Map<String, dynamic>> detalles = [];
+      String stationName = _estacionSeleccionada?.name ?? 'S/N';
+      String fechaStr = _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String();
+
+      // Mapping of controllers to internal keys
+      final paramsMap = {
+        'temperatura': _tempController,
+        'ph': _phController,
+        'conductividad': _condController,
+        'oxigeno': _oxigenoController,
+        'turbiedad': _turbiedadController,
+        'profundidad': _profundidadController,
+        'nivel': _nivelTerrenoController,
+      };
+
+      paramsMap.forEach((key, controller) {
+        if (controller.text.isNotEmpty) {
+          final val = double.tryParse(controller.text);
+          if (val != null) {
+            detalles.add({
+              'estacion': stationName,
+              'fecha': fechaStr,
+              'parametro': key,
+              'valor': val,
+            });
+          }
+        }
+      });
+
+      // 3. Save via Transaction
+      final id = await _dbHelper.saveMonitoreoTransaction(header, detalles);
+      
+      if (_currentRegistroId == null) {
+        setState(() => _currentRegistroId = id);
+      }
+    } catch (e) {
+      debugPrint('Error en _guardarInterno: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ ERROR GUARDANDO BORRADOR: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          )
+        );
+      }
+    }
   }
 
   @override
@@ -344,6 +392,8 @@ _turbidimetroSeleccionado = eq.codigo;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cargar puntos: $e')));
       }
     }
+    
+    _saveAsDraft();
   }
 
   Future<void> _onStationChanged(String name) async {
@@ -353,6 +403,7 @@ _turbidimetroSeleccionado = eq.codigo;
     });
 
     await _updateHistoricalRanges(station.name);
+    _saveAsDraft();
   }
 
   Future<void> _updateHistoricalRanges(String stationName) async {
@@ -366,27 +417,37 @@ _turbidimetroSeleccionado = eq.codigo;
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sin registros históricos para este punto de control'))
+            const SnackBar(
+              content: Text('Sin datos históricos. Todo valor ingresado se marcará como anómalo.'),
+              backgroundColor: Colors.redAccent,
+            )
           );
         }
         return;
       }
 
+      // 1. Prepare map with EXACT database keys
       final Map<String, List<double>> values = {
-        'ph': [], 'temp': [], 'cond': [], 'oxigeno': [], 'nivel': [], 'turbiedad': []
+        'temperatura': [], 
+        'ph': [], 
+        'conductividad': [], 
+        'oxigeno': [], 
+        'turbiedad': [], 
+        'profundidad': [],
+        'nivel': []
       };
 
+      // 2. Parse normalized rows (parametro, valor)
       for (var row in history) {
-        if (row['ph'] != null) values['ph']!.add(row['ph']);
-        if (row['temperatura'] != null) values['temp']!.add(row['temperatura']);
-        if (row['conductividad'] != null) values['cond']!.add(row['conductividad']);
-        if (row['oxigeno'] != null) values['oxigeno']!.add(row['oxigeno']);
-        if (row['nivel'] != null) values['nivel']!.add(row['nivel']);
-        // Note: 'turbiedad' is not in historical_muestras schema yet, 
-        // using 'SDT' as fallback or empty if specific mapping needed later
-        if (row['SDT'] != null) values['turbiedad']!.add(row['SDT']); 
+        final String? paramKey = row['parametro']?.toString();
+        final dynamic val = row['valor'];
+        
+        if (paramKey != null && val != null && values.containsKey(paramKey)) {
+          values[paramKey]!.add((val as num).toDouble());
+        }
       }
 
+      // 3. Calculate 3-Sigma Ranges
       final Map<String, Map<String, double?>> ranges = {};
       values.forEach((key, list) {
         ranges[key] = _calculateThreeSigmaRange(list);
@@ -401,14 +462,49 @@ _turbidimetroSeleccionado = eq.codigo;
     }
   }
 
+  Future<void> _navigateToChart(String parameterKey, TextEditingController controller) async {
+    // 1. Close keyboard and trace event
+    FocusScope.of(context).unfocus();
+    debugPrint('🚨 TOCASTE EL PULSO 🚨');
+    debugPrint('👉 Parámetro: $parameterKey');
+    debugPrint('👉 Estación: "${_estacionSeleccionada?.name}"');
+
+    // 2. Validate the station
+    if (_estacionSeleccionada == null) {
+      debugPrint('❌ Navegación cancelada: Estación no válida.');
+      _showError('Por favor, selecciona un Punto de Control arriba primero.');
+      return;
+    }
+
+    // 3. Force save draft before leaving
+    await _saveAsDraft();
+
+    // 4. Proceed to Navigation
+    if (!mounted) return;
+    debugPrint('✅ Datos guardados. Navegando a ChartAnalysisScreen...');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChartAnalysisScreen(
+          estacion: _estacionSeleccionada!.name,
+          parametro: parameterKey,
+          currentInputValue: double.tryParse(controller.text),
+        ),
+      ),
+    ).then((_) {
+      debugPrint('🔙 Regresaste de la pantalla de gráficos.');
+    });
+  }
+
   Map<String, double?> _calculateThreeSigmaRange(List<double> data) {
     if (data.isEmpty) return {'min': null, 'max': null};
+    if (data.length == 1) return {'min': data[0], 'max': data[0]}; // Edge case
     
-    // Mean
+    // Mean (μ)
     double mean = data.reduce((a, b) => a + b) / data.length;
     
-    // StdDev
-    double variance = data.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) / data.length;
+    // Variance & Standard Deviation (σ)
+    double variance = data.map((x) => pow(x - mean, 2)).reduce((a, b) => a + b) / (data.length - 1); // Sample variance
     double sigma = sqrt(variance);
 
     return {
@@ -418,78 +514,75 @@ _turbidimetroSeleccionado = eq.codigo;
   }
 
   Future<void> _guardarMonitoreo() async {
-    // 1. Validation
+    // 1. Strict Validation
     if (_programaSeleccionado == null || _estacionSeleccionada == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debe seleccionar Programa y Punto de Control')),
-      );
+      _showError('Debe seleccionar Programa y Punto de Control');
       return;
     }
 
+    if (!_isMonitoreoFallido) {
+      if (!_isDatosMonitoreoComplete) {
+        _showError('Faltan Datos de Monitoreo (Ej. Inspector, Matriz, Foto).');
+        return;
+      }
+      
+      // If Subterránea is selected, validate Nivel Freático
+      if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)) {
+        if (_equipoNivelSeleccionado == null || _tipoNivelPozoSeleccionado == null || _nivelTerrenoController.text.isEmpty || _fechaYHoraNivel == null) {
+          _showError('Faltan datos obligatorios en la sección Nivel Freático.');
+          return;
+        }
+      }
+
+      if (!_isMultiparametroComplete) {
+        _showError('Faltan datos en la sección Multiparámetro (o su fotografía).');
+        return;
+      }
+      if (!_isTurbiedadComplete) {
+        _showError('Faltan datos en la sección Turbiedad (o su fotografía).');
+        return;
+      }
+      if (!_isMuestreoComplete) {
+        _showError('Faltan datos en la sección Muestreo.');
+        return;
+      }
+    } else {
+      if (_obsController.text.trim().isEmpty) {
+        _showError('Debe ingresar una observación explicando por qué falló el monitoreo.');
+        return;
+      }
+    }
+
+    // 2. Proceed with Final Save
     setState(() => _isSaving = true);
     try {
-      // Find Inspector ID
-      int? inspectorId;
-      if (_inspectorSeleccionado != null) {
-        final usuarios = await _dbHelper.getUsuarios();
-        try {
-          final inspector = usuarios.firstWhere((u) => '${u.nombre} ${u.apellido}' == _inspectorSeleccionado);
-          inspectorId = inspector.idUsuario;
-        } catch (_) {}
-      }
+      await _guardarInterno(isDraft: false);
 
-      // 2. Data Mapping & Conversion
-      final registro = {
-        'programa_id': _programaSeleccionado!.id,
-        'estacion_id': _estacionSeleccionada!.id,
-        'fecha_hora': _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String(),
-        'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
-        'observacion': _obsController.text,
-        'matriz_id': _matrizSeleccionada?.idMatriz,
-        'equipo_multi_id': _equiposMulti.where((e) => e.codigo == _equipoMultiparametroSeleccionado).firstOrNull?.id,
-        'temp': double.tryParse(_tempController.text),
-        'ph': double.tryParse(_phController.text),
-        'conductividad': double.tryParse(_condController.text),
-        'oxigeno': double.tryParse(_oxigenoController.text),
-        'turbidimetro_id': _turbidimetros.where((e) => e.codigo == _turbidimetroSeleccionado).firstOrNull?.id,
-        'turbiedad': double.tryParse(_turbiedadController.text),
-        'metodo_id': _metodoSeleccionado?.idMetodo,
-        'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
-        'isotopico': _muestreoIsotopico == true ? 1 : 0,
-        'cod_laboratorio': _codLabController.text,
-        'usuario_id': inspectorId,
-        'foto_path': _imagePath,
-        'foto_multiparametro': _fotoMultiparametroPath,
-        'foto_turbiedad': _fotoTurbiedadPath,
-      };
-
-      // 3. Persistence
-      registro['is_draft'] = 0;
-      registro['last_modified'] = DateTime.now().toIso8601String();
-
-      if (_currentRegistroId != null) {
-        await _dbHelper.updateRegistroMonitoreo(_currentRegistroId!, registro);
-      } else {
-        await _dbHelper.addRegistroMonitoreo(registro);
-      }
-
-      // 4. Success
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Monitoreo guardado exitosamente'),
+            content: Text('✅ Monitoreo guardado exitosamente'),
             backgroundColor: Colors.green,
           ),
         );
         Navigator.pushReplacementNamed(context, '/monitoreos');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
-      }
+      if (mounted) _showError('Error al guardar: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
@@ -500,7 +593,17 @@ _turbidimetroSeleccionado = eq.codigo;
 
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) async {
+        if (didPop) return;
+        await _saveAsDraft();
+        if (context.mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: Scaffold(
+
       appBar: AppBar(
         title: const Text('Registrar Monitoreo'),
         actions: [IconButton(icon: const Icon(Icons.more_vert), onPressed: () {})],
@@ -561,6 +664,7 @@ _turbidimetroSeleccionado = eq.codigo;
                   hasHistory: _hasHistory,
                   minAllowed: _parameterRanges['nivel']?['min'],
                   maxAllowed: _parameterRanges['nivel']?['max'],
+                  onPulseTap: () => _navigateToChart('nivel', _nivelTerrenoController),
                 ),
                 CustomFormRow(
                   label: 'Hora Medición - Nivel',
@@ -600,10 +704,10 @@ _turbidimetroSeleccionado = eq.codigo;
                 onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
               ),
               if (_equipoMultiparametroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, parameterKey: 'temp', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['temp']?['min'], maxAllowed: _parameterRanges['temp']?['max']),
-                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, parameterKey: 'ph', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max']),
-                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, parameterKey: 'cond', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['cond']?['min'], maxAllowed: _parameterRanges['cond']?['max']),
-                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, parameterKey: 'oxigeno', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max']),
+                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, parameterKey: 'temperatura', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['temperatura']?['min'], maxAllowed: _parameterRanges['temperatura']?['max'], onPulseTap: () => _navigateToChart('temperatura', _tempController)),
+                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, parameterKey: 'ph', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max'], onPulseTap: () => _navigateToChart('ph', _phController)),
+                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, parameterKey: 'conductividad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['conductividad']?['min'], maxAllowed: _parameterRanges['conductividad']?['max'], onPulseTap: () => _navigateToChart('conductividad', _condController)),
+                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, parameterKey: 'oxigeno', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max'], onPulseTap: () => _navigateToChart('oxigeno', _oxigenoController)),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA MULTIPARÁMETRO',
                   path: _fotoMultiparametroPath,
@@ -629,7 +733,7 @@ _turbidimetroSeleccionado = eq.codigo;
                 onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
               ),
               if (_turbidimetroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController, parameterKey: 'turbiedad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['turbiedad']?['min'], maxAllowed: _parameterRanges['turbiedad']?['max']),
+                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController, parameterKey: 'turbiedad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['turbiedad']?['min'], maxAllowed: _parameterRanges['turbiedad']?['max'], onPulseTap: () => _navigateToChart('turbiedad', _turbiedadController)),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA TURBIEDAD',
                   path: _fotoTurbiedadPath,
@@ -703,8 +807,9 @@ _turbidimetroSeleccionado = eq.codigo;
           const SizedBox(height: 32),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   // --- MÉTODOS Y HELPERS ---
 
@@ -740,7 +845,10 @@ _turbidimetroSeleccionado = eq.codigo;
             selectedValue: _inspectorSeleccionado,
             options: _inspectoresOptions,
             isDarkMode: isDarkMode,
-            onChanged: (val) => setState(() => _inspectorSeleccionado = val),
+            onChanged: (val) {
+              setState(() => _inspectorSeleccionado = val);
+              _saveAsDraft();
+            },
           ),
           
           SearchableDropdown(
@@ -752,6 +860,7 @@ _turbidimetroSeleccionado = eq.codigo;
             isDarkMode: isDarkMode,
             onChanged: (val) {
               setState(() => _matrizSeleccionada = _matrices.firstWhere((m) => m.nombreMatriz == val));
+              _saveAsDraft();
             },
           ),
           
@@ -777,8 +886,8 @@ _turbidimetroSeleccionado = eq.codigo;
               showPulseIcon: false,
               isMandatory: true,
               hasHistory: _hasHistory,
-              minAllowed: _parameterRanges['nivel']?['min'],
-              maxAllowed: _parameterRanges['nivel']?['max'],
+              minAllowed: _parameterRanges['profundidad']?['min'],
+              maxAllowed: _parameterRanges['profundidad']?['max'],
             ),
           ),
           
@@ -1579,6 +1688,7 @@ class CustomParametroInputRow extends StatefulWidget {
   final double? minAllowed;
   final double? maxAllowed;
   final bool hasHistory;
+  final VoidCallback? onPulseTap; // Added for state persistence before navigation
 
   final String parameterKey; // e.g., 'nivel', 'ph', 'temperatura'
   final String selectedEstacion;
@@ -1597,6 +1707,7 @@ class CustomParametroInputRow extends StatefulWidget {
     this.minAllowed,
     this.maxAllowed,
     this.hasHistory = false,
+    this.onPulseTap,
   });
 
   @override
@@ -1631,119 +1742,94 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
   }
 
   void _validate() {
-    if (!widget.hasHistory || widget.controller.text.isEmpty) {
-      if (_isValidated || _isOutOfRange) {
-        setState(() {
-          _isValidated = false;
-          _isOutOfRange = false;
-        });
-      }
+    final String text = widget.controller.text;
+    final double? val = double.tryParse(text);
+
+    // 1. Empty or invalid number -> Grey state
+    if (text.isEmpty || val == null) {
+      setState(() {
+        _isValidated = false;
+        _isOutOfRange = false;
+      });
       return;
     }
 
-    final double? val = double.tryParse(widget.controller.text);
-    if (val != null && widget.minAllowed != null && widget.maxAllowed != null) {
-      final bool outside = val < widget.minAllowed! || val > widget.maxAllowed!;
-      final bool valid = !outside;
-      
-      if (_isValidated != valid || _isOutOfRange != outside) {
-        setState(() {
-          _isValidated = valid;
-          _isOutOfRange = outside;
-        });
-      }
-    } else {
-      if (_isValidated || _isOutOfRange) {
-        setState(() {
-          _isValidated = false;
-          _isOutOfRange = false;
-        });
-      }
+    // 2. STRICT RULE: If NO history exists, it is an ANOMALY by default (Red)
+    if (!widget.hasHistory || widget.minAllowed == null || widget.maxAllowed == null) {
+      setState(() {
+        _isValidated = false; // NO Green Check
+        _isOutOfRange = true; // Force Red State
+      });
+      return;
     }
+
+    // 3. 3-Sigma Rule: Check bounds
+    bool isOut = val < widget.minAllowed! || val > widget.maxAllowed!;
+    
+    setState(() {
+      _isValidated = !isOut;
+      _isOutOfRange = isOut;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 0.0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       dense: true,
       leading: SizedBox(
         width: 32,
         child: widget.showLeadingIcon 
             ? Icon(
                 _isValidated ? Icons.check_circle : (_isOutOfRange ? Icons.error : Icons.cancel), 
+                // Prominent Red for out-of-range error
                 color: _isValidated ? Colors.greenAccent : (_isOutOfRange ? Colors.redAccent : (widget.isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400)), 
-                size: 22
+                size: 24
               )
             : null,
       ),
       title: Text(widget.label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: widget.controller,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            style: TextStyle(fontSize: 16, color: widget.isDarkMode ? Colors.white : Colors.black87),
-            decoration: InputDecoration(
-              hintText: widget.hintText,
-              hintStyle: TextStyle(
-                color: widget.isDarkMode ? Colors.grey.shade400 : Colors.black54, 
-                fontSize: 16
-              ),
-              border: InputBorder.none,
-              isDense: true,
-              contentPadding: const EdgeInsets.only(top: 4.0),
-            ),
+      // Replaced custom Column with native errorText and errorBorder handling
+      subtitle: TextField(
+        controller: widget.controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        onChanged: (val) => widget.onPulseTap != null ? null : setState(() {}), // Ensure reactivity if No Tap
+        style: TextStyle(
+          fontSize: 16, 
+          // Turn the typed text red if it's out of range
+          color: _isOutOfRange ? Colors.redAccent : (widget.isDarkMode ? Colors.white : Colors.black87)
+        ),
+        decoration: InputDecoration(
+          hintText: widget.hintText,
+          hintStyle: TextStyle(
+            color: widget.isDarkMode ? Colors.grey.shade400 : Colors.black54, 
+            fontSize: 16
           ),
-          if (_isOutOfRange)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4.0),
-              child: Text(
-                'Fuera de rango histórico (3σ)',
-                style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold),
-              ),
-            ),
-        ],
+          // 🚨 Native Error Styling Magic
+          errorText: _isOutOfRange 
+              ? (!widget.hasHistory || widget.minAllowed == null 
+                  ? 'Anómalo: Sin historial previo' 
+                  : 'Anómalo: Fuera de rango 3σ') 
+              : null,
+          errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+          
+          // Hide borders normally, but show red underline on error
+          border: InputBorder.none,
+          errorBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Colors.redAccent, width: 1.5),
+          ),
+          focusedErrorBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: Colors.redAccent, width: 2.0),
+          ),
+          isDense: true,
+          contentPadding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
+        ),
       ),
       trailing: widget.showPulseIcon 
           ? Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: GestureDetector(
-                onTap: () {
-                  // 1. Trace the tap event and incoming variables
-                  debugPrint('🚨 TOCASTE EL PULSO 🚨');
-                  debugPrint('👉 Parámetro de esta fila: ${widget.parameterKey}');
-                  debugPrint('👉 Estación actual recibida: "${widget.selectedEstacion}"');
-
-                  // 2. Validate the station (Context is required for the chart)
-                  if (widget.selectedEstacion.isEmpty || widget.selectedEstacion.contains('Seleccione')) {
-                    debugPrint('❌ Navegación cancelada: Estación no válida.');
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Por favor, selecciona un Punto de Control arriba primero.'),
-                        backgroundColor: Colors.orange,
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                    return; // Abort navigation
-                  }
-
-                  // 3. Proceed to Navigation
-                  debugPrint('✅ Datos correctos. Navegando a ChartAnalysisScreen...');
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChartAnalysisScreen(
-                        estacion: widget.selectedEstacion,
-                        parametro: widget.parameterKey,
-                        currentInputValue: double.tryParse(widget.controller.text),
-                      ),
-                    ),
-                  ).then((_) {
-                    debugPrint('🔙 Regresaste de la pantalla de gráficos.');
-                  });
-                },
+                onTap: widget.onPulseTap,
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
