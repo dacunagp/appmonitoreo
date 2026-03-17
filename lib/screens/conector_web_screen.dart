@@ -120,28 +120,28 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
       );
 
       // 3. Robust Parsing
-      List<dynamic> muestrasToInsert = [];
+      List<dynamic> apiRecords = [];
       if (decodedJson is List) {
-        // It's already a list of objects
-        muestrasToInsert = decodedJson;
+        apiRecords = decodedJson;
       } else if (decodedJson is Map<String, dynamic>) {
-        // It's a Map. It might be wrapped (e.g., {"data": [...]}) or just a single object
         if (decodedJson.containsKey('data') && decodedJson['data'] is List) {
-          muestrasToInsert = decodedJson['data'];
+          apiRecords = decodedJson['data'];
         } else if (decodedJson.containsKey('muestras') && decodedJson['muestras'] is List) {
-          muestrasToInsert = decodedJson['muestras'];
+          apiRecords = decodedJson['muestras'];
         } else {
-          // Treat as a single object response and wrap it in a list
-          muestrasToInsert = [decodedJson];
+          apiRecords = [decodedJson];
         }
       }
 
-      // 4. Save to DB
-      await _dbHelper.insertHistorialMuestras(muestrasToInsert);
+      // 4. Transform to Long Format
+      final List<Map<String, dynamic>> parsedData = _apiService.transformToLongFormat(apiRecords);
+
+      // 5. Save to DB using High-Performance Batch
+      await _dbHelper.syncHistoricalData(parsedData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Se sincronizaron ${muestrasToInsert.length} registros')),
+          SnackBar(content: Text('Se sincronizaron ${parsedData.length} mediciones históricas')),
         );
       }
     } catch (e) {

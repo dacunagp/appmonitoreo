@@ -14,6 +14,7 @@ import '../models/models.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import 'dart:async';
+import 'chart_analysis_screen.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
@@ -46,8 +47,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   List<Program> _programas = [];
   List<Station> _estaciones = [];
   List<Matriz> _matrices = [];
-  List<Map<String, dynamic>> _equiposMulti = [];
-  List<Map<String, dynamic>> _turbidimetros = [];
+  List<EquipoDetalle> _equiposMulti = [];
+  List<EquipoDetalle> _turbidimetros = [];
   List<Metodo> _metodos = [];
   String? _inspectorSeleccionado;
   List<String> _inspectoresOptions = [];
@@ -160,12 +161,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
       'observacion': _obsController.text,
       'matriz_id': _matrizSeleccionada?.idMatriz,
-      'equipo_multi_id': _equiposMulti.firstWhere((e) => e['codigo'] == _equipoMultiparametroSeleccionado, orElse: () => {'id': null})['id'],
+      'equipo_multi_id': _equiposMulti.any((e) => e.codigo == _equipoMultiparametroSeleccionado) ? _equiposMulti.firstWhere((e) => e.codigo == _equipoMultiparametroSeleccionado).id : null,
       'temp': double.tryParse(_tempController.text),
       'ph': double.tryParse(_phController.text),
       'conductividad': double.tryParse(_condController.text),
       'oxigeno': double.tryParse(_oxigenoController.text),
-      'turbidimetro_id': _turbidimetros.firstWhere((e) => e['codigo'] == _turbidimetroSeleccionado, orElse: () => {'id': null})['id'],
+      'turbidimetro_id': _turbidimetros.any((e) => e.codigo == _turbidimetroSeleccionado) ? _turbidimetros.firstWhere((e) => e.codigo == _turbidimetroSeleccionado).id : null,
       'turbiedad': double.tryParse(_turbiedadController.text),
       'metodo_id': _metodoSeleccionado?.idMetodo,
       'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
@@ -225,10 +226,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _inspectoresOptions = usuarios.map((u) => '${u.nombre} ${u.apellido}').toList();
         
         _equiposMulti = multiData;
-        _equiposMultiOptions = multiData.map((e) => e['codigo'].toString()).toList();
+        _equiposMultiOptions = multiData.map((e) => e.codigo.toString()).toList();
         
         _turbidimetros = turbiData;
-        _turbidimetrosOptions = turbiData.map((e) => e['codigo'].toString()).toList();
+        _turbidimetrosOptions = turbiData.map((e) => e.codigo.toString()).toList();
         
         _isLoading = false;
       });
@@ -288,14 +289,14 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       
       if (data['equipo_multi_id'] != null) {
         try {
-          final eq = _equiposMulti.firstWhere((e) => e['id'] == data['equipo_multi_id']);
-          _equipoMultiparametroSeleccionado = eq['codigo'];
+          final eq = _equiposMulti.firstWhere((e) => e.id == data['equipo_multi_id']);
+_equipoMultiparametroSeleccionado = eq.codigo;
         } catch (_) {}
       }
       if (data['turbidimetro_id'] != null) {
         try {
-          final eq = _turbidimetros.firstWhere((e) => e['id'] == data['turbidimetro_id']);
-          _turbidimetroSeleccionado = eq['codigo'];
+          final eq = _turbidimetros.firstWhere((e) => e.id == data['turbidimetro_id']);
+_turbidimetroSeleccionado = eq.codigo;
         } catch (_) {}
       }
 
@@ -445,12 +446,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'monitoreo_fallido': _isMonitoreoFallido ? 1 : 0,
         'observacion': _obsController.text,
         'matriz_id': _matrizSeleccionada?.idMatriz,
-        'equipo_multi_id': _equiposMulti.firstWhere((e) => e['codigo'] == _equipoMultiparametroSeleccionado, orElse: () => {'id': null})['id'],
+        'equipo_multi_id': _equiposMulti.where((e) => e.codigo == _equipoMultiparametroSeleccionado).firstOrNull?.id,
         'temp': double.tryParse(_tempController.text),
         'ph': double.tryParse(_phController.text),
         'conductividad': double.tryParse(_condController.text),
         'oxigeno': double.tryParse(_oxigenoController.text),
-        'turbidimetro_id': _turbidimetros.firstWhere((e) => e['codigo'] == _turbidimetroSeleccionado, orElse: () => {'id': null})['id'],
+        'turbidimetro_id': _turbidimetros.where((e) => e.codigo == _turbidimetroSeleccionado).firstOrNull?.id,
         'turbiedad': double.tryParse(_turbiedadController.text),
         'metodo_id': _metodoSeleccionado?.idMetodo,
         'hidroquimico': _muestreoHidroquimico == true ? 1 : 0,
@@ -526,7 +527,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             ),
 
           // --- SECCIÓN 1.5: NIVEL FREÁTICO (Condicional) ---
-          if (_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)
+          if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false) && !_isMonitoreoFallido)
             _buildSectionTile(
               'Nivel Freático',
               isDarkMode,
@@ -555,6 +556,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   hintText: 'Ingrese nivel terreno',
                   isDarkMode: isDarkMode,
                   controller: _nivelTerrenoController,
+                  parameterKey: 'nivel',
+                  selectedEstacion: _estacionSeleccionada?.name ?? '',
                   hasHistory: _hasHistory,
                   minAllowed: _parameterRanges['nivel']?['min'],
                   maxAllowed: _parameterRanges['nivel']?['max'],
@@ -597,10 +600,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
               ),
               if (_equipoMultiparametroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, hasHistory: _hasHistory, minAllowed: _parameterRanges['temp']?['min'], maxAllowed: _parameterRanges['temp']?['max']),
-                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max']),
-                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, hasHistory: _hasHistory, minAllowed: _parameterRanges['cond']?['min'], maxAllowed: _parameterRanges['cond']?['max']),
-                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max']),
+                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, parameterKey: 'temp', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['temp']?['min'], maxAllowed: _parameterRanges['temp']?['max']),
+                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, parameterKey: 'ph', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max']),
+                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, parameterKey: 'cond', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['cond']?['min'], maxAllowed: _parameterRanges['cond']?['max']),
+                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, parameterKey: 'oxigeno', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max']),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA MULTIPARÁMETRO',
                   path: _fotoMultiparametroPath,
@@ -626,7 +629,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
               ),
               if (_turbidimetroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController, hasHistory: _hasHistory, minAllowed: _parameterRanges['turbiedad']?['min'], maxAllowed: _parameterRanges['turbiedad']?['max']),
+                CustomParametroInputRow(label: 'Turbiedad [NTU]', hintText: 'Ingrese turbiedad', isDarkMode: isDarkMode, controller: _turbiedadController, parameterKey: 'turbiedad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['turbiedad']?['min'], maxAllowed: _parameterRanges['turbiedad']?['max']),
                 _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA TURBIEDAD',
                   path: _fotoTurbiedadPath,
@@ -768,6 +771,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               hintText: 'Ingrese profundidad', 
               isDarkMode: isDarkMode, 
               controller: _profundidadController,
+              parameterKey: 'profundidad',
+              selectedEstacion: _estacionSeleccionada?.name ?? '',
               showLeadingIcon: true,
               showPulseIcon: false,
               isMandatory: true,
@@ -1575,12 +1580,17 @@ class CustomParametroInputRow extends StatefulWidget {
   final double? maxAllowed;
   final bool hasHistory;
 
+  final String parameterKey; // e.g., 'nivel', 'ph', 'temperatura'
+  final String selectedEstacion;
+
   const CustomParametroInputRow({
     super.key,
     required this.label,
     required this.hintText,
     required this.isDarkMode,
     required this.controller,
+    required this.parameterKey,
+    required this.selectedEstacion,
     this.showPulseIcon = true,
     this.showLeadingIcon = true,
     this.isMandatory = true,
@@ -1700,7 +1710,40 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
           ? Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: GestureDetector(
-                onTap: () => debugPrint('Botón presionado: ${widget.label}'),
+                onTap: () {
+                  // 1. Trace the tap event and incoming variables
+                  debugPrint('🚨 TOCASTE EL PULSO 🚨');
+                  debugPrint('👉 Parámetro de esta fila: ${widget.parameterKey}');
+                  debugPrint('👉 Estación actual recibida: "${widget.selectedEstacion}"');
+
+                  // 2. Validate the station (Context is required for the chart)
+                  if (widget.selectedEstacion.isEmpty || widget.selectedEstacion.contains('Seleccione')) {
+                    debugPrint('❌ Navegación cancelada: Estación no válida.');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Por favor, selecciona un Punto de Control arriba primero.'),
+                        backgroundColor: Colors.orange,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                    return; // Abort navigation
+                  }
+
+                  // 3. Proceed to Navigation
+                  debugPrint('✅ Datos correctos. Navegando a ChartAnalysisScreen...');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChartAnalysisScreen(
+                        estacion: widget.selectedEstacion,
+                        parametro: widget.parameterKey,
+                        currentInputValue: double.tryParse(widget.controller.text),
+                      ),
+                    ),
+                  ).then((_) {
+                    debugPrint('🔙 Regresaste de la pantalla de gráficos.');
+                  });
+                },
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(

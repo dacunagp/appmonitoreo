@@ -42,8 +42,6 @@ class ApiService {
 
   Future<dynamic> fetchHistorialMuestras(String programa, List<String> estaciones) async {
     final String basicAuth = 'Basic ${base64Encode(utf8.encode(_auth))}';
-    final url = '$_baseUrl/muestras'; // Assuming relative to _baseUrl or absolute
-    // Re-check base URL: https://gpconsultores.cl/apicollector/sync.php?endpoint=
     final fullUrl = 'https://gpconsultores.cl/apicollector/sync.php?endpoint=muestras';
 
     try {
@@ -67,5 +65,28 @@ class ApiService {
     } catch (e) {
       throw Exception('API Error: $e');
     }
+  }
+
+  List<Map<String, dynamic>> transformToLongFormat(List<dynamic> apiData) {
+    List<Map<String, dynamic>> longFormatList = [];
+    const parameterKeys = ['nivel', 'caudal', 'ph', 'temperatura', 'conductividad', 'oxigeno', 'SDT', 'turbiedad'];
+
+    for (var record in apiData) {
+      String fecha = record['fecha'] ?? '';
+      String estacion = record['estacion'] ?? '';
+
+      for (String key in parameterKeys) {
+        if (record[key] != null) {
+          longFormatList.add({
+            'monitoreo_id': null, // Historical data from API has no local parent
+            'estacion': estacion,
+            'fecha': fecha,
+            'parametro': key,
+            'valor': (record[key] as num).toDouble(), // Safely cast ints (10) and doubles (6.78)
+          });
+        }
+      }
+    }
+    return longFormatList;
   }
 }

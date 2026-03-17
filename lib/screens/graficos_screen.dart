@@ -22,28 +22,20 @@ class GraficosScreen extends StatefulWidget {
 class _GraficosScreenState extends State<GraficosScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   
-  // State variables for dynamic data
-  List<Station> _estaciones = [];
-  List<Parametro> _parametros = [];
-  Station? _estacionSeleccionada;
-  List<Parametro> _parametrosSeleccionados = [];
-  Map<String, List<ChartData>> _multiChartData = {};
+  // State variables
+  List<Map<String, dynamic>> _estacionesList = [];
+  List<Parametro> _parametrosList = [];
+
+  Map<String, dynamic>? _estacionSeleccionada; // Holds the selected station map
+  List<Parametro> _parametrosSeleccionados = []; // Holds selected parameters
+  
+  List<List<ChartData>> _chartDataList = []; // Data for each selected parameter
   bool _isLoadingData = true;
   bool _hasGraphed = false;
   
   // Mock options state
   bool _ejeSecundario = false;
   bool _invertirEje = false;
-
-  // Mapping connects selected parameter clave_interna to DB column name
-  final Map<String, String> _parameterToColumnMap = {
-    'ph': 'ph',
-    'temperatura': 'temperatura',
-    'conductividad': 'conductividad',
-    'oxigeno': 'oxigeno',
-    'caudal': 'caudal',
-    'nivel': 'nivel',
-  };
 
   @override
   void initState() {
@@ -54,27 +46,23 @@ class _GraficosScreenState extends State<GraficosScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoadingData = true);
     try {
-      // 1. Get Stations
-      final stationsFull = await _dbHelper.getStationsWithPrograms();
-      // 2. Get Parameters
-      final parametros = await _dbHelper.getParametros();
+      final dbHelper = DatabaseHelper();
       
-      // 3. Filter Parameters that can be graphed (checking against our map)
-      final filteredParametros = parametros.where((p) => _parameterToColumnMap.containsKey(p.claveInterna.toLowerCase())).toList();
-
+      // 1. Fetch ALL parameters dynamically (this guarantees SDT, Turbiedad, etc. appear)
+      final params = await dbHelper.getParametros();
+      
+      // 2. Fetch stations with program alias (estacion, latitud, longitud, program_name)
+      final stations = await dbHelper.getStationsWithPrograms();
+      
       setState(() {
-        _estaciones = stationsFull.map((s) => Station(
-          id: s['id'], 
-          name: s['name'],
-          latitude: s['latitude'] ?? 0.0,
-          longitude: s['longitude'] ?? 0.0,
-        )).toList();
-        _parametros = filteredParametros;
+        _parametrosList = params;
+        _estacionesList = stations;
         _isLoadingData = false;
       });
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingData = false);
+        debugPrint('Error loading catalog data: $e');
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cargar datos: $e')));
       }
     }
@@ -151,7 +139,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
       return const Expanded(child: Center(child: CircularProgressIndicator()));
     }
 
-    if (_multiChartData.isEmpty && !_hasGraphed) {
+    if (_chartDataList.isEmpty && !_hasGraphed) {
       return Expanded(
         child: Container(
           width: double.infinity,
@@ -184,12 +172,12 @@ class _GraficosScreenState extends State<GraficosScreen> {
       );
     }
 
-    if (_multiChartData.isEmpty && _hasGraphed) {
+    if (_chartDataList.isEmpty && _hasGraphed) {
       return const Expanded(child: Center(child: Text('No hay registros históricos para esta combinación', style: TextStyle(color: Colors.grey, fontSize: 16), textAlign: TextAlign.center)));
     }
 
     final paramNames = _parametrosSeleccionados.map((p) => p.nombreParametro).join(' / ');
-    final titleText = '${_estacionSeleccionada?.name ?? ""} [$paramNames]';
+    final titleText = '${_estacionSeleccionada?['estacion'] ?? ""} [$paramNames]';
     final unitsText = _parametrosSeleccionados.map((p) => p.unidad).toSet().join(' / ');
 
     return Expanded(
@@ -197,7 +185,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
         backgroundColor: Colors.transparent,
         plotAreaBorderWidth: 0,
         title: ChartTitle(text: titleText, textStyle: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
-        legend: Legend(isVisible: true, position: LegendPosition.bottom, alignment: ChartAlignment.center, textStyle: const TextStyle(fontSize: 10, color: Colors.grey)),
+        legend: Legend(isVisible: false),
         tooltipBehavior: TooltipBehavior(enable: true, header: titleText),
         primaryXAxis: DateTimeAxis(
           majorGridLines: const MajorGridLines(width: 0.5, color: Colors.grey),
@@ -205,12 +193,11 @@ class _GraficosScreenState extends State<GraficosScreen> {
           dateFormat: DateFormat('dd/MM/yyyy'),
         ),
         primaryYAxis: NumericAxis(
-          name: 'yAxis1',
-          minimum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados.first.min : null,
-          maximum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados.first.max : null,
+          minimum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados[0].min : null,
+          maximum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados[0].max : null,
           title: AxisTitle(
             text: _parametrosSeleccionados.isNotEmpty 
-              ? '${_parametrosSeleccionados.first.nombreParametro} [${_parametrosSeleccionados.first.unidad}]' 
+              ? '${_parametrosSeleccionados[0].nombreParametro} [${_parametrosSeleccionados[0].unidad}]' 
               : '', 
             textStyle: const TextStyle(color: Colors.green, fontSize: 10)
           ),
@@ -221,7 +208,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
         axes: <ChartAxis>[
           if (_parametrosSeleccionados.length > 1)
             NumericAxis(
-              name: 'yAxis2',
+              name: 'secondaryYAxis',
               opposedPosition: true,
               minimum: _parametrosSeleccionados[1].min,
               maximum: _parametrosSeleccionados[1].max,
@@ -229,26 +216,29 @@ class _GraficosScreenState extends State<GraficosScreen> {
                 text: '${_parametrosSeleccionados[1].nombreParametro} [${_parametrosSeleccionados[1].unidad}]',
                 textStyle: const TextStyle(color: Colors.purple, fontSize: 10),
               ),
-              majorGridLines: const MajorGridLines(width: 0), // Hide grid lines for second axis to avoid clutter
+              majorGridLines: const MajorGridLines(width: 0),
               labelStyle: const TextStyle(color: Colors.grey, fontSize: 10),
               labelFormat: '{value}',
             ),
         ],
-        series: _parametrosSeleccionados.asMap().entries.map((entry) {
-          final idx = entry.key;
-          final p = entry.value;
-          final color = idx == 0 ? Colors.green : Colors.purple;
+        series: List.generate(_parametrosSeleccionados.length, (index) {
+          final p = _parametrosSeleccionados[index];
+          final color = index == 0 ? Colors.green : Colors.purple;
           return LineSeries<ChartData, DateTime>(
-            dataSource: _multiChartData[p.nombreParametro] ?? [],
+            dataSource: _chartDataList.length > index ? _chartDataList[index] : [],
             xValueMapper: (ChartData data, _) => data.x,
             yValueMapper: (ChartData data, _) => data.y,
-            yAxisName: idx == 0 ? 'yAxis1' : 'yAxis2',
+            yAxisName: index == 1 ? 'secondaryYAxis' : null,
             color: color,
             width: 2,
-            markerSettings: const MarkerSettings(isVisible: false),
+            markerSettings: const MarkerSettings(
+              isVisible: true,
+              width: 4,
+              height: 4,
+            ),
             name: p.nombreParametro,
           );
-        }).toList(),
+        }),
       ),
     );
   }
@@ -274,17 +264,12 @@ class _GraficosScreenState extends State<GraficosScreen> {
                       // Estaciones Item
                       InkWell(
                         onTap: () {
-                          _mostrarDialogoSeleccion(
-                            titulo: 'Seleccionar Estación',
-                            opciones: _estaciones.map((e) => e.name).toList(),
-                            seleccionActual: _estacionSeleccionada != null ? [_estacionSeleccionada!.name] : [],
-                            onSeleccionado: (List<String> seleccion) {
+                          _mostrarDialogoSeleccionManual(
+                            titulo: 'Seleccionar Estación / Programa',
+                            esEstacion: true,
+                            onSeleccionado: (dynamic seleccion) {
                               setState(() {
-                                if (seleccion.isNotEmpty) {
-                                  _estacionSeleccionada = _estaciones.firstWhere((e) => e.name == seleccion.first);
-                                } else {
-                                  _estacionSeleccionada = null;
-                                }
+                                _estacionSeleccionada = seleccion;
                                 _hasGraphed = false;
                               });
                               _fetchAndGraphData();
@@ -301,7 +286,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
                               const Text('Estaciones', style: TextStyle(fontSize: 14, color: Colors.blueAccent)),
                               const Spacer(),
                               Text(
-                                _estacionSeleccionada?.name ?? 'Seleccione',
+                                _estacionSeleccionada?['estacion'] ?? 'Seleccione',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: isDarkMode ? Colors.white70 : Colors.black87,
@@ -318,18 +303,8 @@ class _GraficosScreenState extends State<GraficosScreen> {
                       // Parámetros Item
                       InkWell(
                         onTap: () {
-                          _mostrarDialogoSeleccion(
-                            titulo: 'Seleccionar Parámetro',
-                            opciones: _parametros.map((p) => p.nombreParametro).toList(),
-                            seleccionActual: _parametrosSeleccionados.map((p) => p.nombreParametro).toList(),
-                            multiSelect: true,
-                            onSeleccionado: (List<String> seleccion) {
-                              setState(() {
-                                _parametrosSeleccionados = _parametros.where((p) => seleccion.contains(p.nombreParametro)).toList();
-                                _hasGraphed = false;
-                              });
-                              _fetchAndGraphData();
-                            },
+                          _mostrarDialogoSeleccionParametros(
+                            titulo: 'Seleccionar Parámetros (Máx 2)',
                           );
                         },
                         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
@@ -370,15 +345,9 @@ class _GraficosScreenState extends State<GraficosScreen> {
     );
   }
 
-  Future<void> _mostrarDialogoSeleccion({
+  Future<void> _mostrarDialogoSeleccionParametros({
     required String titulo,
-    required List<String> opciones,
-    required List<String> seleccionActual,
-    required Function(List<String>) onSeleccionado,
-    bool multiSelect = false,
   }) async {
-    List<String> seleccionTemporal = List.from(seleccionActual);
-
     await showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -392,62 +361,49 @@ class _GraficosScreenState extends State<GraficosScreen> {
               contentPadding: const EdgeInsets.only(top: 12),
               content: SizedBox(
                 width: double.maxFinite,
-                height: 300,
+                height: 350,
                 child: ListView.builder(
                   shrinkWrap: true,
-                  itemCount: opciones.length,
+                  itemCount: _parametrosList.length,
                   itemBuilder: (context, index) {
-                    final opcion = opciones[index];
-                    if (multiSelect) {
-                      return CheckboxListTile(
-                        title: Text(opcion, style: const TextStyle(fontSize: 14)),
-                        value: seleccionTemporal.contains(opcion),
-                        activeColor: Colors.blueAccent,
-                        onChanged: (bool? checked) {
-                          setStateDialog(() {
-                            if (checked == true) {
-                              if (seleccionTemporal.length < 2) {
-                                seleccionTemporal.add(opcion);
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Máximo 2 parámetros'), duration: Duration(seconds: 1)),
-                                );
-                              }
+                    final param = _parametrosList[index];
+                    final isSelected = _parametrosSeleccionados.contains(param);
+                    return CheckboxListTile(
+                      title: Text(param.nombreParametro, style: const TextStyle(fontSize: 14)),
+                      secondary: const Icon(Icons.science, color: Colors.green, size: 20),
+                      value: isSelected,
+                      activeColor: Colors.blueAccent,
+                      checkColor: Colors.white,
+                      onChanged: (bool? value) {
+                        setStateDialog(() {
+                          if (value == true) {
+                            if (_parametrosSeleccionados.length < 2) {
+                              _parametrosSeleccionados.add(param);
                             } else {
-                              seleccionTemporal.remove(opcion);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Máximo 2 parámetros'), duration: Duration(seconds: 1)),
+                              );
                             }
-                          });
-                        },
-                      );
-                    } else {
-                      return RadioListTile<String>(
-                        title: Text(opcion, style: const TextStyle(fontSize: 14)),
-                        value: opcion,
-                        groupValue: seleccionTemporal.isNotEmpty ? seleccionTemporal.first : null,
-                        activeColor: Colors.blueAccent,
-                        onChanged: (String? value) {
-                          setStateDialog(() {
-                            if (value != null) {
-                              seleccionTemporal = [value];
-                            }
-                          });
-                        },
-                      );
-                    }
+                          } else {
+                            _parametrosSeleccionados.remove(param);
+                          }
+                        });
+                        // Update main state to show selection in real-time
+                        setState(() {
+                          _hasGraphed = false;
+                        });
+                      },
+                    );
                   },
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('CANCELAR', style: TextStyle(color: Colors.blueAccent)),
-                ),
-                TextButton(
                   onPressed: () {
-                    onSeleccionado(seleccionTemporal);
                     Navigator.of(context).pop();
+                    _fetchAndGraphData();
                   },
-                  child: const Text('SELECCIONAR', style: TextStyle(color: Colors.blueAccent)),
+                  child: const Text('LISTO', style: TextStyle(color: Colors.blueAccent)),
                 ),
               ],
             );
@@ -457,26 +413,73 @@ class _GraficosScreenState extends State<GraficosScreen> {
     );
   }
 
+  Future<void> _mostrarDialogoSeleccionManual({
+    required String titulo,
+    required bool esEstacion,
+    required Function(dynamic) onSeleccionado,
+  }) async {
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+        return AlertDialog(
+          backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          title: Text(titulo, style: const TextStyle(fontSize: 16)),
+          contentPadding: const EdgeInsets.only(top: 12),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 350,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _estacionesList.length,
+              itemBuilder: (context, index) {
+                final item = _estacionesList[index];
+                return ListTile(
+                  title: Text(item['estacion'] ?? 'S/N', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                  subtitle: Text(item['program_name'] ?? 'Sin programa', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  leading: const Icon(Icons.location_on, color: Colors.blueAccent, size: 20),
+                  onTap: () {
+                    onSeleccionado(item);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('CANCELAR', style: TextStyle(color: Colors.blueAccent)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _fetchAndGraphData() async {
     if (_estacionSeleccionada == null || _parametrosSeleccionados.isEmpty) {
       setState(() {
-        _multiChartData = {};
+        _chartDataList = [];
         _hasGraphed = false;
       });
       return;
     }
 
     try {
-      final data = await _dbHelper.getHistorialMuestrasByStationName(_estacionSeleccionada!.name);
-      final Map<String, List<ChartData>> newMultiData = {};
+      final String selectedStationName = _estacionSeleccionada!['estacion'];
+      final List<List<ChartData>> newDataList = [];
 
-      for (var p in _parametrosSeleccionados) {
-        final String columnKey = _parameterToColumnMap[p.claveInterna.toLowerCase()] ?? '';
-        if (columnKey.isEmpty) continue;
+      final data = await _dbHelper.getHistorialMuestrasByStationName(selectedStationName);
 
-        final List<ChartData> mappedData = data.map((sample) {
+      for (var param in _parametrosSeleccionados) {
+        final String selectedInternalKey = param.claveInterna;
+        debugPrint('📊 Solicitando gráfico para: $selectedStationName -> $selectedInternalKey');
+
+        final List<ChartData> mappedData = data.where((sample) => sample['parametro'] == selectedInternalKey).map((sample) {
           final dateValue = DateTime.tryParse(sample['fecha'] ?? '');
-          final dynamicRaw = sample[columnKey];
+          final dynamicRaw = sample['valor'];
           final double? yValue = dynamicRaw is double ? dynamicRaw : double.tryParse(dynamicRaw?.toString() ?? '');
           if (dateValue != null && yValue != null) {
             return ChartData(dateValue, yValue);
@@ -486,11 +489,11 @@ class _GraficosScreenState extends State<GraficosScreen> {
 
         // Sort data by date for proper charting
         mappedData.sort((a, b) => a.x.compareTo(b.x));
-        newMultiData[p.nombreParametro] = mappedData;
+        newDataList.add(mappedData);
       }
 
       setState(() {
-        _multiChartData = newMultiData;
+        _chartDataList = newDataList;
         _hasGraphed = true;
       });
     } catch (e) {
