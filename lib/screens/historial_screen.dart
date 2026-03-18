@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
+import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 
@@ -36,10 +37,21 @@ class _HistorialScreenState extends State<HistorialScreen> {
       // Sort samples by date descending to get the last sync date
       samples.sort((a, b) => (b['fecha'] ?? '').compareTo(a['fecha'] ?? ''));
 
+      // 🚨 FIX: Parse and format the raw ISO date string
+      String formattedDate = 'N/A';
+      if (samples.isNotEmpty && samples.first['fecha'] != null) {
+        try {
+          DateTime dt = DateTime.parse(samples.first['fecha']);
+          formattedDate = DateFormat('yyyy-MM-dd HH:mm').format(dt);
+        } catch (e) {
+          formattedDate = samples.first['fecha'].toString();
+        }
+      }
+
       return {
         'estacion': entry.key,
         'count': samples.length,
-        'last_sync_date': samples.first['fecha'] ?? 'N/A',
+        'last_sync_date': formattedDate,
       };
     }).toList();
 

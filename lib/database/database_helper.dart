@@ -183,7 +183,13 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getHistorialMuestras() async {
     final db = await database;
-    return await db.query('historial_mediciones', orderBy: 'fecha DESC');
+    // 🚨 CRITICAL: Strictly query ONLY the official historical data table.
+    // Filter out records linked to local drafts (monitoreo_id NOT NULL = draft detail)
+    return await db.rawQuery('''
+      SELECT * FROM historial_mediciones
+      WHERE monitoreo_id IS NULL
+      ORDER BY fecha DESC
+    ''');
   }
 
   Future<int> deleteSampleGroupByStation(String stationName) async {

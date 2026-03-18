@@ -46,7 +46,7 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
   @override
   void initState() {
     super.initState();
-    _setUnit();
+    _loadUnit(); // 🚨 NEW: Fetch unit dynamically from SQLite
     _dynamicInputValue = widget.currentInputValue;
     _overrideController = TextEditingController(text: _dynamicInputValue?.toStringAsFixed(2) ?? '');
     _chartDataFuture = _loadAndCalculateData();
@@ -71,16 +71,34 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
     }
   }
 
-  void _setUnit() {
-    switch (widget.parametro.toLowerCase()) {
-      case 'temperatura': _unit = '°C'; break;
-      case 'ph': _unit = 'u.pH'; break;
-      case 'conductividad': _unit = 'µS/cm'; break;
-      case 'oxigeno': _unit = 'mg/l'; break;
-      case 'turbiedad': _unit = 'NTU'; break;
-      case 'profundidad':
-      case 'nivel': _unit = 'm'; break;
-      default: _unit = '';
+  Future<void> _loadUnit() async {
+    try {
+      final db = await _dbHelper.database;
+      final List<Map<String, dynamic>> result = await db.query(
+        'parametros',
+        columns: ['unidad'],
+        where: 'clave_interna = ? OR nombre = ?',
+        whereArgs: [widget.parametro, widget.parametro],
+        limit: 1,
+      );
+
+      if (mounted) {
+        setState(() {
+          if (result.isNotEmpty && result.first['unidad'] != null) {
+            _unit = result.first['unidad'].toString();
+          } else {
+            // Fallback for control fields not in the parameters catalog
+            if (widget.parametro.toLowerCase().contains('profundidad') ||
+                widget.parametro.toLowerCase().contains('nivel')) {
+              _unit = 'm';
+            } else {
+              _unit = '';
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading unit from DB: $e');
     }
   }
 
@@ -296,9 +314,14 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
         title: AxisTitle(text: yAxisLabel),
       ),
       series: <CartesianSeries<ChartData, DateTime>>[
-        if (_max3Sigma != null)
+        // 1. LimSup (Dashed Red Line)
+        if (_max3Sigma != null && _historicalData.isNotEmpty)
           LineSeries<ChartData, DateTime>(
-            dataSource: _historicalData.map((e) => ChartData(e.x, _max3Sigma!)).toList(),
+            // 🚨 CRITICAL FIX: Only two points to allow dashArray to render properly
+            dataSource: [
+              ChartData(_historicalData.first.x, _max3Sigma!),
+              ChartData(_historicalData.last.x, _max3Sigma!),
+            ],
             xValueMapper: (ChartData data, _) => data.x,
             yValueMapper: (ChartData data, _) => data.y,
             color: Colors.red,
@@ -307,9 +330,14 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
             enableTooltip: false,
             markerSettings: const MarkerSettings(isVisible: false),
           ),
-        if (_min3Sigma != null)
+        // 2. LimInf (Dashed Orange Line)
+        if (_min3Sigma != null && _historicalData.isNotEmpty)
           LineSeries<ChartData, DateTime>(
-            dataSource: _historicalData.map((e) => ChartData(e.x, _min3Sigma!)).toList(),
+            // 🚨 CRITICAL FIX: Only two points
+            dataSource: [
+              ChartData(_historicalData.first.x, _min3Sigma!),
+              ChartData(_historicalData.last.x, _min3Sigma!),
+            ],
             xValueMapper: (ChartData data, _) => data.x,
             yValueMapper: (ChartData data, _) => data.y,
             color: Colors.orange,
