@@ -137,17 +137,55 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
           return Column(
             children: [
               _buildStatusBanner(),
+              _buildCurrentValueDisplay(),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: _buildChart(),
                 ),
               ),
+              const SizedBox(height: 16),
               _buildStatsCards(),
             ],
           );
         },
       ),
+    );
+  }
+
+  Widget _buildCurrentValueDisplay() {
+    final String paramName = widget.parametro;
+    final String capitalizedParam = paramName.isNotEmpty ? '${paramName[0].toUpperCase()}${paramName.substring(1)}' : 'Valor';
+    final String nowStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            children: [
+              Text(
+                nowStr,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const Spacer(),
+              Text(
+                '$capitalizedParam [ $_unit ]',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Text(
+            widget.currentInputValue?.toStringAsFixed(2) ?? 'S/D',
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
     );
   }
 
@@ -180,68 +218,77 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
     final TooltipBehavior tooltip = TooltipBehavior(
       enable: true,
       header: '',
-      canShowMarker: true,
-      format: 'point.x : point.y $_unit',
+      format: 'Fecha: point.x\nValor: point.y $_unit',
+      color: Colors.grey.shade800,
     );
 
+    final String paramName = widget.parametro;
+    final String capitalizedParam = paramName.isNotEmpty ? '${paramName[0].toUpperCase()}${paramName.substring(1)}' : 'Valor';
+    final String yAxisLabel = '$capitalizedParam [$_unit]';
+
     return SfCartesianChart(
+      legend: const Legend(
+        isVisible: true,
+        position: LegendPosition.bottom,
+        toggleSeriesVisibility: true,
+        overflowMode: LegendItemOverflowMode.wrap,
+      ),
       tooltipBehavior: tooltip,
       primaryXAxis: DateTimeAxis(
-        title: const AxisTitle(text: 'Fecha'),
+        title: const AxisTitle(text: ''),
         dateFormat: DateFormat('dd/MM/yyyy'),
+        majorGridLines: const MajorGridLines(width: 0),
       ),
       primaryYAxis: NumericAxis(
-        title: AxisTitle(text: '$_unit'),
-        plotBands: <PlotBand>[
-          if (_max3Sigma != null)
-            PlotBand(
-              isVisible: true,
-              start: _max3Sigma!,
-              end: _max3Sigma!,
-              borderWidth: 2,
-              borderColor: Colors.redAccent,
-              dashArray: const <double>[5, 5],
-              text: 'Máx 3σ',
-              textStyle: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10),
-              horizontalTextAlignment: TextAnchor.end,
-            ),
-          if (_min3Sigma != null)
-            PlotBand(
-              isVisible: true,
-              start: _min3Sigma!,
-              end: _min3Sigma!,
-              borderWidth: 2,
-              borderColor: Colors.redAccent,
-              dashArray: const <double>[5, 5],
-              text: 'Mín 3σ',
-              textStyle: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 10),
-              horizontalTextAlignment: TextAnchor.end,
-            ),
-        ],
+        title: AxisTitle(text: yAxisLabel),
       ),
-      series: <CartesianSeries>[
+      series: <CartesianSeries<ChartData, DateTime>>[
+        if (_max3Sigma != null)
+          LineSeries<ChartData, DateTime>(
+            dataSource: _historicalData.map((e) => ChartData(e.x, _max3Sigma!)).toList(),
+            xValueMapper: (ChartData data, _) => data.x,
+            yValueMapper: (ChartData data, _) => data.y,
+            color: Colors.red,
+            dashArray: const <double>[5, 5],
+            name: 'LimSup',
+            enableTooltip: false,
+            markerSettings: const MarkerSettings(isVisible: false),
+          ),
+        if (_min3Sigma != null)
+          LineSeries<ChartData, DateTime>(
+            dataSource: _historicalData.map((e) => ChartData(e.x, _min3Sigma!)).toList(),
+            xValueMapper: (ChartData data, _) => data.x,
+            yValueMapper: (ChartData data, _) => data.y,
+            color: Colors.orange,
+            dashArray: const <double>[5, 5],
+            name: 'LimInf',
+            enableTooltip: false,
+            markerSettings: const MarkerSettings(isVisible: false),
+          ),
         LineSeries<ChartData, DateTime>(
           dataSource: _historicalData,
           xValueMapper: (ChartData data, _) => data.x,
           yValueMapper: (ChartData data, _) => data.y,
-          name: widget.parametro,
-          markerSettings: const MarkerSettings(isVisible: true),
+          color: Theme.of(context).brightness == Brightness.dark ? Colors.tealAccent : Colors.teal,
+          name: widget.estacion,
+          markerSettings: const MarkerSettings(isVisible: false),
         ),
         if (widget.currentInputValue != null)
           ScatterSeries<ChartData, DateTime>(
             dataSource: [ChartData(DateTime.now(), widget.currentInputValue!)],
             xValueMapper: (ChartData data, _) => data.x,
             yValueMapper: (ChartData data, _) => data.y,
-            color: Colors.red,
-            markerSettings: const MarkerSettings(
-              isVisible: true, 
-              height: 12, 
-              width: 12, 
-              shape: DataMarkerType.circle,
-              borderWidth: 2,
-              borderColor: Colors.white,
-            ),
+            color: Colors.red, // 1. Sets the legend color
             name: 'Valor Actual',
+            markerSettings: const MarkerSettings(
+              isVisible: true,
+              height: 16, 
+              width: 16,
+              shape: DataMarkerType.circle,
+              color: Colors.red, // 🚨 CRITICAL FIX: Forces the marker fill to be red
+              borderColor: Colors.white, // Thin white border for contrast
+              borderWidth: 2,
+            ),
           ),
       ],
     );
