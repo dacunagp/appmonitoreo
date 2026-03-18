@@ -55,11 +55,11 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'collector.db');
     
-    // ⚠️ TEMPORARY: Reset database
-    await _log('💣 [INIT] Destruyendo base de datos vieja para aplicar nuevo esquema...');
-    await deleteDatabase(path);
+    // 🚨 FIX: Removed the temporary deleteDatabase(path) that was wiping data on startup.
+    // await _log('💣 [INIT] Destruyendo base de datos vieja para aplicar nuevo esquema...');
+    // await deleteDatabase(path); 
 
-    await _log('✨ [INIT] Creando base de datos SQLite en: $path');
+    await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     return await openDatabase(
       path,
       version: 1,
