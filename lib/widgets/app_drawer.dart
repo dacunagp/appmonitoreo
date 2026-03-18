@@ -42,7 +42,7 @@ class AppDrawer extends StatelessWidget {
                 _buildMenuItem(
                   context,
                   title: 'Monitoreos',
-                  icon: Icons.power_settings_new,
+                  icon: Icons.engineering,
                   targetRoute: '/monitoreos',
                   isDarkMode: isDarkMode,
                 ),
