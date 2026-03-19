@@ -19,6 +19,7 @@ import 'screens/administracion_screen.dart';
 import 'screens/exportar_bd_screen.dart';
 import 'screens/api_config_screen.dart';
 import 'screens/security_lock_screen.dart';
+import 'screens/campanas_screen.dart';
 
 void main() async {
   // 1. Aseguramos que Flutter esté listo antes de ejecutar código asíncrono
@@ -65,6 +66,7 @@ class MonitoreoApp extends StatelessWidget {
         '/exportar_bd': (context) => const ExportarBDScreen(),
         '/api_config': (context) => const ApiConfigScreen(),
         '/security_lock': (context) => const SecurityLockScreen(),
+        '/campanas': (context) => const CampanasScreen(),
       },
     );
   }

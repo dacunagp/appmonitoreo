@@ -105,7 +105,7 @@ class AppDrawer extends StatelessWidget {
                 _buildMenuItem(
                   context,
                   title: 'Campañas',
-                  icon: Icons.layers_outlined,
+                  icon: Icons.map,
                   targetRoute: '/campanas',
                   isDarkMode: isDarkMode,
                 ),
@@ -128,6 +128,7 @@ class AppDrawer extends StatelessWidget {
                   targetRoute: '/exportar_bd',
                   isDarkMode: isDarkMode,
                 ),
+
                 _buildMenuItem(
                   context,
                   title: 'Configuración API',

@@ -426,6 +426,20 @@ class DatabaseHelper {
     return maps.map((map) => Station.fromJson(map)).toList();
   }
 
+  Future<List<Station>> getAllStations() async {
+    final db = await database;
+    final maps = await db.rawQuery('''
+      SELECT 
+        id, 
+        name AS estacion, 
+        latitude AS latitud, 
+        longitude AS longitud 
+      FROM stations 
+      ORDER BY name ASC
+    ''');
+    return maps.map((map) => Station.fromJson(map)).toList();
+  }
+
   Future<List<Map<String, dynamic>>> getStationsWithPrograms() async {
     final db = await database;
     // 🛡️ BLINDAJE SQL: 
