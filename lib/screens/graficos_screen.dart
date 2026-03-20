@@ -26,16 +26,19 @@ class _GraficosScreenState extends State<GraficosScreen> {
   List<Map<String, dynamic>> _estacionesList = [];
   List<Parametro> _parametrosList = [];
 
-  Map<String, dynamic>? _estacionSeleccionada; // Holds the selected station map
-  List<Parametro> _parametrosSeleccionados = []; // Holds selected parameters
+  Map<String, dynamic>? _estacionSeleccionada; 
+  List<Parametro> _parametrosSeleccionados = []; 
   
-  List<List<ChartData>> _chartDataList = []; // Data for each selected parameter
+  List<List<ChartData>> _chartDataList = []; 
   bool _isLoadingData = true;
   bool _hasGraphed = false;
   
-  // Mock options state
-  bool _ejeSecundario = false;
-  bool _invertirEje = false;
+  // Options state
+  bool _invertirEje = true; // Initialized to ON per spec
+  
+  // Series colors
+  Color _colorSerie1 = const Color(0xFF0D47A1); // Deep Blue
+  Color _colorSerie2 = const Color(0xFFFF9800); // Orange
 
   @override
   void initState() {
@@ -184,8 +187,11 @@ class _GraficosScreenState extends State<GraficosScreen> {
       child: SfCartesianChart(
         backgroundColor: Colors.transparent,
         plotAreaBorderWidth: 0,
-        title: ChartTitle(text: titleText, textStyle: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.bold)),
-        legend: Legend(isVisible: false),
+        title: ChartTitle(
+          text: titleText, 
+          textStyle: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.bold)
+        ),
+        legend: const Legend(isVisible: false),
         tooltipBehavior: TooltipBehavior(enable: true, header: titleText),
         primaryXAxis: DateTimeAxis(
           majorGridLines: const MajorGridLines(width: 0.5, color: Colors.grey),
@@ -193,13 +199,14 @@ class _GraficosScreenState extends State<GraficosScreen> {
           dateFormat: DateFormat('dd/MM/yyyy'),
         ),
         primaryYAxis: NumericAxis(
+          isInversed: _invertirEje,
           minimum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados[0].min : null,
           maximum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados[0].max : null,
           title: AxisTitle(
             text: _parametrosSeleccionados.isNotEmpty 
               ? '${_parametrosSeleccionados[0].nombreParametro} [${_parametrosSeleccionados[0].unidad}]' 
               : '', 
-            textStyle: const TextStyle(color: Colors.green, fontSize: 10)
+            textStyle: TextStyle(color: _colorSerie1, fontSize: 10)
           ),
           majorGridLines: const MajorGridLines(width: 0.5, color: Colors.grey),
           labelStyle: const TextStyle(color: Colors.grey, fontSize: 10),
@@ -214,7 +221,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
               maximum: _parametrosSeleccionados[1].max,
               title: AxisTitle(
                 text: '${_parametrosSeleccionados[1].nombreParametro} [${_parametrosSeleccionados[1].unidad}]',
-                textStyle: const TextStyle(color: Colors.purple, fontSize: 10),
+                textStyle: TextStyle(color: _colorSerie2, fontSize: 10),
               ),
               majorGridLines: const MajorGridLines(width: 0),
               labelStyle: const TextStyle(color: Colors.grey, fontSize: 10),
@@ -223,7 +230,7 @@ class _GraficosScreenState extends State<GraficosScreen> {
         ],
         series: List.generate(_parametrosSeleccionados.length, (index) {
           final p = _parametrosSeleccionados[index];
-          final color = index == 0 ? Colors.green : Colors.purple;
+          final color = index == 0 ? _colorSerie1 : _colorSerie2;
           return LineSeries<ChartData, DateTime>(
             dataSource: _chartDataList.length > index ? _chartDataList[index] : [],
             xValueMapper: (ChartData data, _) => data.x,
@@ -505,22 +512,85 @@ class _GraficosScreenState extends State<GraficosScreen> {
 
   Widget _buildOpcionesView() {
     return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: Column(
-          children: [
-            _buildSwitchRow(
-              label: 'Eje Secundario',
-              value: _ejeSecundario,
-              onChanged: (val) => setState(() => _ejeSecundario = val),
-            ),
-            const Divider(height: 1),
-            _buildSwitchRow(
+      child: Column(
+        children: [
+          // "Invert. Eje1" Switch (functional logic implemented)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: _buildSwitchRow(
               label: 'Invert. Eje1',
               value: _invertirEje,
               onChanged: (val) => setState(() => _invertirEje = val),
             ),
-          ],
+          ),
+          
+          // Dual Color Palette Section in a Floating Card style
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+            child: Card(
+              color: Colors.white,
+              elevation: 4,
+              shadowColor: Colors.black26,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Selector 1: Color Parámetro 1
+                    const Text(
+                      'Color Parámetro 1',
+                      style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _buildColorCircle(const Color(0xFF0D47A1), _colorSerie1 == const Color(0xFF0D47A1), (c) => setState(() => _colorSerie1 = c)),
+                        const SizedBox(width: 12),
+                        _buildColorCircle(const Color(0xFF008080), _colorSerie1 == const Color(0xFF008080), (c) => setState(() => _colorSerie1 = c)),
+                        const SizedBox(width: 12),
+                        _buildColorCircle(const Color(0xFF4CAF50), _colorSerie1 == const Color(0xFF4CAF50), (c) => setState(() => _colorSerie1 = c)),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Selector 2: Color Parámetro 2
+                    const Text(
+                      'Color Parámetro 2',
+                      style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _buildColorCircle(const Color(0xFFFF9800), _colorSerie2 == const Color(0xFFFF9800), (c) => setState(() => _colorSerie2 = c)),
+                        const SizedBox(width: 12),
+                        _buildColorCircle(const Color(0xFF9C27B0), _colorSerie2 == const Color(0xFF9C27B0), (c) => setState(() => _colorSerie2 = c)),
+                        const SizedBox(width: 12),
+                        _buildColorCircle(const Color(0xFFF44336), _colorSerie2 == const Color(0xFFF44336), (c) => setState(() => _colorSerie2 = c)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorCircle(Color color, bool isSelected, ValueChanged<Color> onTap) {
+    return GestureDetector(
+      onTap: () => onTap(color),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: isSelected ? Border.all(color: Colors.blue, width: 3) : null,
         ),
       ),
     );
