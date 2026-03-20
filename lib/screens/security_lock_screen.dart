@@ -88,7 +88,7 @@ class _SecurityLockScreenState extends State<SecurityLockScreen> {
               Icon(
                 Icons.lock_outline,
                 size: 100,
-                color: _isError ? Colors.red : theme.primaryColor,
+                color: _isError ? Colors.red : theme.colorScheme.primary,
               ),
               const SizedBox(height: 24),
               Text(
@@ -124,8 +124,8 @@ class _SecurityLockScreenState extends State<SecurityLockScreen> {
                         counterText: '',
                         enabledBorder: OutlineInputBorder(
                           borderSide: BorderSide(
-                            color: _isError ? Colors.red : (isDarkMode ? Colors.white24 : Colors.grey[300]!),
-                            width: 2,
+                            color: _isError ? Colors.red : theme.colorScheme.outline,
+                            width: 1.5,
                           ),
                           borderRadius: BorderRadius.circular(12),
                         ),

@@ -179,16 +179,21 @@ class _UrlAccessTabState extends State<UrlAccessTab> {
               visualDensity: VisualDensity.compact,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
               leading: Radio<int>(
-                  value: item['id'],
-                  activeColor: theme.primaryColor,
-                  groupValue: _urls.firstWhere((u) => u['is_active'] == 1, orElse: () => {'id': -1})['id'],
-                  onChanged: (val) async {
-                    if (val != null) {
-                      await _dbHelper.setActiveUrl(val);
-                      _loadData();
-                    }
-                  },
-                ),
+                value: item['id'],
+                fillColor: MaterialStateProperty.resolveWith<Color>((states) {
+                  if (states.contains(MaterialState.selected)) {
+                    return theme.colorScheme.primary;
+                  }
+                  return theme.colorScheme.onSurface.withOpacity(0.6);
+                }),
+                groupValue: _urls.firstWhere((u) => u['is_active'] == 1, orElse: () => {'id': -1})['id'],
+                onChanged: (val) async {
+                  if (val != null) {
+                    await _dbHelper.setActiveUrl(val);
+                    _loadData();
+                  }
+                },
+              ),
                 title: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -202,7 +207,8 @@ class _UrlAccessTabState extends State<UrlAccessTab> {
                             style: TextStyle(
                               fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
                               fontSize: 14,
-                              color: isActive ? theme.primaryColor : null,
+                              // Elige el color primario del tema para resaltar servidores activos
+                              color: isActive ? theme.colorScheme.primary : theme.colorScheme.onSurface,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -214,7 +220,10 @@ class _UrlAccessTabState extends State<UrlAccessTab> {
                               const SizedBox(width: 4),
                               Text(
                                 item['usuario'], 
-                                style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.grey[600])
+                                style: TextStyle(
+                                  fontSize: 12, 
+                                  color: isDarkMode ? Colors.white70 : Colors.grey[700]
+                                )
                               ),
                               const SizedBox(width: 8),
                               if (isActive) 
@@ -224,7 +233,14 @@ class _UrlAccessTabState extends State<UrlAccessTab> {
                                     color: theme.primaryColor.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: const Text('ACTIVO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.blue)),
+                                  child: Text(
+                                    'ACTIVO', 
+                                    style: TextStyle(
+                                      fontSize: 10, 
+                                      fontWeight: FontWeight.bold, 
+                                      color: isDarkMode ? Colors.lightBlueAccent : Colors.blue.shade700
+                                    )
+                                  ),
                                 ),
                             ],
                           ),

@@ -17,6 +17,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
   List<Map<String, dynamic>> _filteredPoints = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
+  DateTime? _selectedDate;
 
   @override
   void initState() {
@@ -26,7 +27,13 @@ class _HistorialScreenState extends State<HistorialScreen> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final data = await _dbHelper.getHistorialMuestras();
+    
+    String? dateFilter;
+    if (_selectedDate != null) {
+      dateFilter = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+    }
+    
+    final data = await _dbHelper.getHistorialMuestras(dateFilter: dateFilter);
 
     // Grouping in Dart using collection package
     final grouped = groupBy(data, (Map m) => m['estacion'] ?? 'Sin Estación');
@@ -103,6 +110,67 @@ class _HistorialScreenState extends State<HistorialScreen> {
     }
   }
 
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      helpText: 'Filtrar por fecha',
+      cancelText: 'Limpiar Filtro',
+      confirmText: 'FILTRAR',
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDate = picked;
+      });
+      _loadData();
+    } else {
+      // Si el usuario cancela, podríamos querer limpiar el filtro
+      // Pero usualmente el botón "Cancelar" solo cierra.
+      // Sin embargo, si queremos una forma de limpiar:
+      if (_selectedDate != null) {
+        setState(() {
+          _selectedDate = null;
+        });
+        _loadData();
+      }
+    }
+  }
+
+  Future<void> _showDeleteAllConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar registros'),
+        content: const Text(
+            '¿Estás seguro de que deseas borrar todas las muestras mostradas? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCELAR'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('ELIMINAR', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _dbHelper.deleteAllHistorialMuestras();
+      _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Todos los registros han sido eliminados')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -114,13 +182,15 @@ class _HistorialScreenState extends State<HistorialScreen> {
         title: const Text('Historial de Muestras'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () {},
-            color: isDarkMode ? Colors.white : null,
+            icon: Icon(
+              _selectedDate == null ? Icons.filter_list : Icons.filter_list_off,
+              color: _selectedDate != null ? Colors.orange : (isDarkMode ? Colors.white : null),
+            ),
+            onPressed: () => _selectDate(context),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            onPressed: () {},
+            onPressed: _showDeleteAllConfirmation,
             color: isDarkMode ? Colors.white : null,
           ),
         ],

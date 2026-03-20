@@ -264,15 +264,34 @@ class DatabaseHelper {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getHistorialMuestras() async {
+  Future<List<Map<String, dynamic>>> getHistorialMuestras({String? dateFilter}) async {
     final db = await database;
     // 🚨 CRITICAL: Strictly query ONLY the official historical data table.
     // Filter out records linked to local drafts (monitoreo_id NOT NULL = draft detail)
-    return await db.rawQuery('''
-      SELECT * FROM historial_mediciones
-      WHERE monitoreo_id IS NULL
-      ORDER BY fecha DESC
-    ''');
+    String whereClause = 'monitoreo_id IS NULL';
+    List<dynamic> whereArgs = [];
+    
+    if (dateFilter != null) {
+      whereClause += ' AND fecha LIKE ?';
+      whereArgs.add('$dateFilter%');
+    }
+
+    return await db.query(
+      'historial_mediciones',
+      where: whereClause,
+      whereArgs: whereArgs,
+      orderBy: 'fecha DESC',
+    );
+  }
+
+  Future<int> deleteAllHistorialMuestras() async {
+    final db = await database;
+    // Deletes only official historical samples, leaving drafts intact if needed
+    // In this context, the user wants to clear the current view, which is monitoreo_id IS NULL
+    return await db.delete(
+      'historial_mediciones',
+      where: 'monitoreo_id IS NULL',
+    );
   }
 
   Future<int> deleteSampleGroupByStation(String stationName) async {
