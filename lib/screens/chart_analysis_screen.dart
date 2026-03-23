@@ -14,12 +14,14 @@ class ChartAnalysisScreen extends StatefulWidget {
   final String estacion;
   final String parametro;
   final double? currentInputValue;
+  final Function(double)? onValueUpdated; // 🚨 CALLBACK FOR AUTO-SAVE
 
   const ChartAnalysisScreen({
     super.key,
     required this.estacion,
     required this.parametro,
     this.currentInputValue,
+    this.onValueUpdated,
   });
 
   @override
@@ -42,6 +44,7 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
 
   double? _dynamicInputValue;
   late TextEditingController _overrideController;
+  bool _isEditing = false; // 🚨 TRACK EDIT STATE
 
   @override
   void initState() {
@@ -63,11 +66,21 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
     if (parsedValue != null) {
       setState(() {
         _dynamicInputValue = parsedValue;
+        _isEditing = false; // Close edit mode
         if (_min3Sigma != null && _max3Sigma != null) {
           _isOutOfRange = parsedValue < _min3Sigma! || parsedValue > _max3Sigma!;
         }
       });
+      
+      // 🚨 NOTIFY MAIN SCREEN FOR AUTO-SAVE
+      if (widget.onValueUpdated != null) {
+        debugPrint('📈 [CHART] Valor actualizado manualmente via UI: $parsedValue');
+        widget.onValueUpdated!(parsedValue);
+      }
+      
       FocusScope.of(context).unfocus();
+    } else {
+      setState(() => _isEditing = false);
     }
   }
 
@@ -211,47 +224,54 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
           const Icon(Icons.arrow_forward, size: 20, color: Colors.grey),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$capitalizedParam [ $_unit ]',
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _dynamicInputValue?.toStringAsFixed(2) ?? 'S/D',
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          SizedBox(
-            width: 80,
-            child: TextField(
-              controller: _overrideController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: '00.00',
+            child: GestureDetector(
+              onTap: () => setState(() => _isEditing = true),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$capitalizedParam [ $_unit ]',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 4),
+                  if (!_isEditing)
+                    Text(
+                      _dynamicInputValue?.toStringAsFixed(2) ?? 'S/D',
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    )
+                  else
+                    TextField(
+                      controller: _overrideController,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        border: InputBorder.none,
+                      ),
+                      onSubmitted: (_) => _updateChartValue(),
+                    ),
+                ],
               ),
-              onSubmitted: (_) => _updateChartValue(),
             ),
           ),
           const SizedBox(width: 16),
+          // Botón de acción (Check si edita, TrendingUp si no)
           Material(
-            color: Colors.blueAccent,
+            color: _isEditing ? Colors.green : Colors.blueAccent,
             borderRadius: BorderRadius.circular(8),
             child: InkWell(
               onTap: _updateChartValue,
               borderRadius: BorderRadius.circular(8),
               child: Container(
                 padding: const EdgeInsets.all(12),
-                child: const Icon(Icons.trending_up, size: 24, color: Colors.white),
+                child: Icon(
+                  _isEditing ? Icons.check : Icons.trending_up, 
+                  size: 24, 
+                  color: Colors.white
+                ),
               ),
             ),
           ),

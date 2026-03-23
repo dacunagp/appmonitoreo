@@ -37,7 +37,6 @@ class DatabaseHelper {
     }
   }
 
-  // Función útil para leer el archivo de log si lo necesitas en el futuro
   Future<String> readLogFile() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -55,14 +54,10 @@ class DatabaseHelper {
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'collector.db');
     
-    // 🚨 FIX: Removed the temporary deleteDatabase(path) that was wiping data on startup.
-    // await _log('💣 [INIT] Destruyendo base de datos vieja para aplicar nuevo esquema...');
-    // await deleteDatabase(path); 
-
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 2,
+      version: 5, // 🚀 BUMP A VERSIÓN 5
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -82,10 +77,85 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE] Error o columnas ya existentes: $e');
       }
     }
+    if (oldVersion < 3) {
+      try {
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN latitud REAL;");
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN longitud REAL;");
+        await _log('✅ [UPGRADE] Columnas de Latitud y Longitud agregadas con éxito.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error o columnas de lat/long ya existentes: $e');
+      }
+    }
+    if (oldVersion < 4) {
+      try {
+        // Desactivar todas las URLs actuales
+        await db.execute("UPDATE url_acces SET is_active = 0;");
+        
+        // Verificar si la nueva API ya existe
+        var res = await db.rawQuery("SELECT id FROM url_acces WHERE url = ?", ['https://apicollector.gpconsultores.cl/api/']);
+        if (res.isEmpty) {
+          await db.insert('url_acces', {
+            'url': 'https://apicollector.gpconsultores.cl/api/',
+            'usuario': 'collector',
+            'contrasenia': 'gp2026',
+            'is_active': 1
+          });
+        } else {
+          // Si existe, solo la activamos
+          await db.execute("UPDATE url_acces SET is_active = 1 WHERE url = ?", ['https://apicollector.gpconsultores.cl/api/']);
+        }
+        await _log('✅ [UPGRADE] Nuevo endpoint predeterminado configurado.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error configurando nuevo endpoint: $e');
+      }
+    }
+
+    if (oldVersion < 5) {
+      try {
+        await _log('🚀 [UPGRADE] Configurando endpoint de pruebas locales (v5)...');
+        // Desactivar todas las actuales
+        await db.execute("UPDATE url_acces SET is_active = 0;");
+        
+        final String localUrl = 'http://10.0.0.75/api_collector/public/api/';
+        var exists = await db.rawQuery("SELECT id FROM url_acces WHERE url = ?", [localUrl]);
+        
+        if (exists.isEmpty) {
+          await db.insert('url_acces', {
+            'url': localUrl,
+            'usuario': 'collector',
+            'contrasenia': 'gp2026',
+            'is_active': 1
+          });
+        } else {
+          await db.execute("UPDATE url_acces SET is_active = 1 WHERE url = ?", [localUrl]);
+        }
+
+        // Asegurar que las otras dos existan (aunque inactivas)
+        final otherUrls = [
+          {'url': 'https://apicollector.gpconsultores.cl/api/', 'u': 'collector', 'p': 'gp2026'},
+          {'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=', 'u': 'collector', 'p': 'gp2026'},
+        ];
+
+        for (var endpoint in otherUrls) {
+          var res = await db.rawQuery("SELECT id FROM url_acces WHERE url = ?", [endpoint['url']]);
+          if (res.isEmpty) {
+            await db.insert('url_acces', {
+              'url': endpoint['url'],
+              'usuario': endpoint['u'],
+              'contrasenia': endpoint['p'],
+              'is_active': 0
+            });
+          }
+        }
+        
+        await _log('✅ [UPGRADE] Endpoint local configurado como activo.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error al migrar a v5 (Local IP): $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
-    // Check if url_acces exists
     var res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='url_acces'");
     if (res.isEmpty) {
       await _log('🏗️ [MIGRATION] Creando tabla url_acces para base de datos existente...');
@@ -98,15 +168,29 @@ class DatabaseHelper {
           is_active INTEGER DEFAULT 0
         )
       ''');
+      // Insertar API Local (Activa)
       await db.insert('url_acces', {
-        'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
+        'url': 'http://10.0.0.75/api_collector/public/api/',
         'usuario': 'collector',
         'contrasenia': 'gp2026',
         'is_active': 1 
       });
+      // Insertar API Productiva 1 (Inactiva)
+      await db.insert('url_acces', {
+        'url': 'https://apicollector.gpconsultores.cl/api/',
+        'usuario': 'collector',
+        'contrasenia': 'gp2026',
+        'is_active': 0 
+      });
+      // Insertar API Productiva 2 (Inactiva)
+      await db.insert('url_acces', {
+        'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
+        'usuario': 'collector',
+        'contrasenia': 'gp2026',
+        'is_active': 0 
+      });
     }
 
-    // Check if endpoints exists
     res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='endpoints'");
     if (res.isEmpty) {
       await _log('🏗️ [MIGRATION] Creando tabla endpoints para base de datos existente...');
@@ -122,7 +206,6 @@ class DatabaseHelper {
       }
     }
 
-    // Check if security exists
     res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='security'");
     if (res.isEmpty) {
       await _log('🏗️ [MIGRATION] Creando tabla security para base de datos existente...');
@@ -134,8 +217,7 @@ class DatabaseHelper {
   Future _createDB(Database db, int version) async {
     await _log('🏗️ [SCHEMA] Construyendo tablas de la base de datos...');
     
-    // 1. Long Format & Drafts
-    // 🚨 AQUÍ ESTÁ EL FIX: La tabla ahora soporta absolutamente todos los datos del formulario
+    // 1. Long Format & Drafts (MÁS LAS 7 COLUMNAS FLATTENED Y LAT/LONG)
     await db.execute('''
       CREATE TABLE monitoreos (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -158,6 +240,15 @@ class DatabaseHelper {
         equipo_nivel_id INTEGER,
         tipo_pozo TEXT,
         fecha_hora_nivel TEXT,
+        latitud REAL,
+        longitud REAL,
+        temperatura REAL,
+        ph REAL,
+        conductividad REAL,
+        oxigeno REAL,
+        turbiedad REAL,
+        profundidad REAL,
+        nivel REAL,
         is_draft INTEGER DEFAULT 0
       )
     ''');
@@ -191,7 +282,7 @@ class DatabaseHelper {
       )
     ''');
 
-    // 4. Flattened Catalogs (Updated with id_form_fk)
+    // 4. Flattened Catalogs
     await db.execute('''
       CREATE TABLE equipos (
         id INTEGER PRIMARY KEY, 
@@ -220,11 +311,24 @@ class DatabaseHelper {
       )
     ''');
 
+    // Insertar el trío de APIs de fábrica
+    await db.insert('url_acces', {
+      'url': 'http://10.0.0.75/api_collector/public/api/',
+      'usuario': 'collector',
+      'contrasenia': 'gp2026',
+      'is_active': 1 
+    });
+    await db.insert('url_acces', {
+      'url': 'https://apicollector.gpconsultores.cl/api/',
+      'usuario': 'collector',
+      'contrasenia': 'gp2026',
+      'is_active': 0 
+    });
     await db.insert('url_acces', {
       'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
       'usuario': 'collector',
       'contrasenia': 'gp2026',
-      'is_active': 1 
+      'is_active': 0 
     });
 
     await db.execute('''
@@ -242,13 +346,10 @@ class DatabaseHelper {
     await _log('✅ [SCHEMA] Tablas construidas con éxito.');
   }
 
-  // --- API Sync & Historical Data Methods (Long Format) ---
-
   Future<void> syncHistoricalData(List<Map<String, dynamic>> parsedData) async {
     await _log('🔄 [SYNC-HISTORIAL] Iniciando sincronización de historial de mediciones...');
     final db = await database;
     try {
-      //await db.delete('historial_mediciones', where: 'monitoreo_id IS NULL'); 
       Batch batch = db.batch();
       for (var row in parsedData) {
         batch.insert('historial_mediciones', row);
@@ -284,8 +385,6 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getHistorialMuestras({String? dateFilter}) async {
     final db = await database;
-    // 🚨 CRITICAL: Strictly query ONLY the official historical data table.
-    // Filter out records linked to local drafts (monitoreo_id NOT NULL = draft detail)
     String whereClause = 'monitoreo_id IS NULL';
     List<dynamic> whereArgs = [];
     
@@ -304,8 +403,6 @@ class DatabaseHelper {
 
   Future<int> deleteAllHistorialMuestras() async {
     final db = await database;
-    // Deletes only official historical samples, leaving drafts intact if needed
-    // In this context, the user wants to clear the current view, which is monitoreo_id IS NULL
     return await db.delete(
       'historial_mediciones',
       where: 'monitoreo_id IS NULL',
@@ -321,20 +418,33 @@ class DatabaseHelper {
     );
   }
 
-  // --- Local Monitoreo CRUD (Forms) ---
-
   Future<int> addRegistroMonitoreo(Map<String, dynamic> registro) async {
     final db = await database;
     return await db.insert('monitoreos', registro);
   }
 
+  Future<int> updateMonitoreoStatus(int id, int status) async {
+    final db = await database;
+    return await db.update('monitoreos', {'is_draft': status}, where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<List<Map<String, dynamic>>> getMonitoreosList() async {
     final db = await database;
-    // 🚨 FIX: Join with stations to get the actual name for the UI
     return await db.rawQuery('''
       SELECT m.*, COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion
       FROM monitoreos m
       LEFT JOIN stations s ON m.estacion_id = s.id
+      ORDER BY m.fecha_hora DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingToSendMonitoreos() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT m.*, COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion
+      FROM monitoreos m
+      LEFT JOIN stations s ON m.estacion_id = s.id
+      WHERE m.is_draft = 0
       ORDER BY m.fecha_hora DESC
     ''');
   }
@@ -367,20 +477,16 @@ class DatabaseHelper {
     String fecha = header['fecha_hora']?.toString() ?? DateTime.now().toIso8601String();
 
     await db.transaction((txn) async {
-      // 1. Insert or Update Header
       if (monitoreoId == 0) {
-        header.remove('id'); // Double safeguard to ensure auto-increment
+        header.remove('id');
         monitoreoId = await txn.insert('monitoreos', header);
       } else {
         await txn.update('monitoreos', header, where: 'id = ?', whereArgs: [monitoreoId]);
-        // Remove old details for this monitoreo during update to sync
         await txn.delete('historial_mediciones', where: 'monitoreo_id = ?', whereArgs: [monitoreoId]);
       }
       
-      // 2. Insert Details (Parameters)
       for (var detalle in detalles) {
         detalle['monitoreo_id'] = monitoreoId;
-        // Ensure station and date are available in detail if not provided
         detalle['estacion'] ??= estacion;
         detalle['fecha'] ??= fecha;
         await txn.insert('historial_mediciones', detalle);
@@ -390,8 +496,6 @@ class DatabaseHelper {
     return monitoreoId;
   }
 
-  // --- STRONGLY TYPED CATALOG METHODS ---
-
   Future<List<Usuario>> getUsuarios() async {
     final db = await database;
     final maps = await db.query('usuarios');
@@ -400,7 +504,6 @@ class DatabaseHelper {
 
   Future<List<Program>> getPrograms() async {
     final db = await database;
-    // Disfrazamos 'name' como 'nombre' para que Program.fromJson no reciba nulos
     final maps = await db.rawQuery('SELECT id, name AS nombre FROM programs');
     return maps.map((map) => Program.fromJson(map)).toList();
   }
@@ -449,7 +552,6 @@ class DatabaseHelper {
 
   Future<List<Station>> getStationsByProgram(int programId) async {
     final db = await database;
-    // Disfrazamos todas las columnas al español para Station.fromJson
     final maps = await db.rawQuery('''
       SELECT 
         s.id, 
@@ -479,11 +581,6 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getStationsWithPrograms() async {
     final db = await database;
-    // 🛡️ BLINDAJE SQL: 
-    // 1. COALESCE asegura que NUNCA devuelva un 'null' a la pantalla.
-    // 2. Devolvemos las llaves en inglés (name) Y en español (estacion) 
-    //    para que la UI no falle sin importar cuál esté usando.
-    // 3. LEFT JOIN asegura que las estaciones sin programa no rompan la app.
     return await db.rawQuery('''
       SELECT 
         s.id, 
@@ -512,7 +609,6 @@ class DatabaseHelper {
     return maps.map((map) => map['estacion'] as String).toList();
   }
 
-  // --- CUD METHODS ---
   Future<int> addProgram(Program item) async {
     final db = await database;
     return await db.insert('programs', item.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
@@ -592,8 +688,6 @@ class DatabaseHelper {
   Future<int> updateEquipo(Map<String, dynamic> item) async => database.then((db) => db.update('equipos', item, where: 'id = ?', whereArgs: [item['id']]));
   Future<int> deleteEquipo(int id) async => database.then((db) => db.delete('equipos', where: 'id = ?', whereArgs: [id]));
 
-  // --- API CONFIG CRUD METHODS ---
-
   Future<List<Map<String, dynamic>>> getUrlAccess() async {
     final db = await database;
     return await db.query('url_acces', orderBy: 'id ASC');
@@ -648,8 +742,6 @@ class DatabaseHelper {
     return await db.delete('endpoints', where: 'id = ?', whereArgs: [id]);
   }
 
-  // --- SECURITY PIN METHODS ---
-
   Future<String?> getPin() async {
     final db = await database;
     final maps = await db.query('security', limit: 1);
@@ -661,15 +753,12 @@ class DatabaseHelper {
     return await db.update('security', {'pin': newPin});
   }
 
-  // --- REFACTORED syncData (Bulletproof Null Safety + Narrative Logs) ---
-
   Future<void> syncData(Map<String, dynamic> data) async {
     await _log('📥 [SYNC-CATALOGOS] Iniciando proceso de sincronización general...');
     final db = await database;
     Batch batch = db.batch();
 
     try {
-      // 1. Simple mappings
       final simpleCatalogs = {
         'usuarios': 'usuarios',
         'matriz_aguas': 'matrices',
@@ -689,7 +778,6 @@ class DatabaseHelper {
         }
       }
 
-      // 2. Parametros
       if (data.containsKey('parametros')) {
         await _log('🔍 [SYNC] Procesando catálogo especial: parametros (conversión de booleanos)');
         batch.delete('parametros');
@@ -705,7 +793,6 @@ class DatabaseHelper {
         await _log('⚠️ [SYNC] JSON no contiene llave "parametros". Saltando.');
       }
 
-      // 3. NESTED FLATTENING FOR CAMPANAS
       if (data.containsKey('campanas')) {
         await _log('🔍 [SYNC] Desempacando datos anidados: campanas -> programs / stations');
         batch.delete('programs');
@@ -745,7 +832,6 @@ class DatabaseHelper {
         await _log('⚠️ [SYNC] JSON no contiene llave "campanas". Saltando.');
       }
 
-      // 4. Flattening Nested "Equipos"
       if (data.containsKey('equipos')) {
         await _log('🔍 [SYNC] Desempacando datos anidados: equipos por tipo');
         batch.delete('equipos'); 
@@ -771,7 +857,6 @@ class DatabaseHelper {
         await _log('⚠️ [SYNC] JSON no contiene llave "equipos". Saltando.');
       }
 
-      // Ejecutar la transacción completa
       await _log('⚙️ [SYNC] Ejecutando inserción en lote (Batch Commit) en SQLite...');
       await batch.commit(noResult: true);
       await _log('✅ [SYNC-CATALOGOS] Sincronización finalizada exitosamente.');

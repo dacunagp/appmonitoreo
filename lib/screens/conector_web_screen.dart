@@ -207,34 +207,47 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Sincronizar'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.more_vert),
-              onPressed: () {},
-            ),
-          ],
-        bottom: const TabBar(
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          indicatorColor: Colors.white,
-          labelStyle: TextStyle(fontWeight: FontWeight.bold),
-          tabs: [
-            Tab(text: 'PROGRAMAS'),
-            Tab(text: 'MUESTRAS'),
-          ],
-        ),
-        ),
-        drawer: const AppDrawer(currentRoute: '/conector_web'),
-        body: TabBarView(
-          children: [
-            _buildProgramasTab(),
-            _buildMuestrasTab(),
-          ],
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Sincronizar'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.more_vert),
+                onPressed: () {},
+              ),
+            ],
+          bottom: const TabBar(
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+            indicatorColor: Colors.white,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold),
+            tabs: [
+              Tab(text: 'PROGRAMAS'),
+              Tab(text: 'MUESTRAS'),
+            ],
+          ),
+          ),
+          drawer: const AppDrawer(currentRoute: '/conector_web'),
+          body: TabBarView(
+            children: [
+              _buildProgramasTab(),
+              _buildMuestrasTab(),
+            ],
+          ),
         ),
       ),
     );

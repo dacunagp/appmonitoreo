@@ -182,198 +182,211 @@ class _CampanasScreenState extends State<CampanasScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Campañas', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.blue[800],
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      drawer: const AppDrawer(currentRoute: '/campanas'),
-      body: Stack(
-        children: [
-          // MAPA
-          FlutterMap(
-            mapController: _mapController,
-            options: const MapOptions(
-              initialCenter: const LatLng(-33.4489, -70.6693), // Fíjate en el "const"
-              initialZoom: 12,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: _currentLayerUrl,
-                userAgentPackageName: 'com.example.monitoreo_app',
-                tileProvider: _cachePath != null 
-                  ? CachedTileProvider(
-                      store: FileCacheStore(_cachePath!),
-                    )
-                  : null, // Fallback to network if path not ready
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Campañas', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.blue[800],
+          iconTheme: const IconThemeData(color: Colors.white),
+        ),
+        drawer: const AppDrawer(currentRoute: '/campanas'),
+        body: Stack(
+          children: [
+            // MAPA
+            FlutterMap(
+              mapController: _mapController,
+              options: const MapOptions(
+                initialCenter: const LatLng(-33.4489, -70.6693), // Fíjate en el "const"
+                initialZoom: 12,
               ),
-              MarkerLayer(
-                markers: _filteredStations.map((s) {
-                  final isSelected = s.id == _selectedStationId;
-                  return Marker(
-                    point: LatLng(
-                      double.parse(s.latitude.toString()), 
-                      double.parse(s.longitude.toString()),
-                    ),
-                    width: 80,
-                    height: 80,
-                    child: GestureDetector(
-                      onTap: () => _showStationDetails(s),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.location_on,
-                            color: isSelected ? Colors.yellow : Colors.red,
-                            size: isSelected ? 45 : 35,
-                            shadows: const [Shadow(blurRadius: 10, color: Colors.black)],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            s.name,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              shadows: [
-                                Shadow(color: Colors.black, blurRadius: 2.0, offset: Offset(1, 1))
-                              ],
-                            ),
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const RichAttributionWidget(
-                attributions: [
-                  TextSourceAttribution(
-                    'Esri | DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          // CONTROLES DE FILTRO (Barra Negra Superior)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              color: Colors.black.withOpacity(0.85),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  // PROGRAMA
-                  Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: _selectedProgramId,
-                        hint: const Text('Programa', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                        dropdownColor: Colors.grey[900],
-                        icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                        items: [
-                          const DropdownMenuItem<int>(
-                            value: null,
-                            child: Text('Todos los Programas'),
-                          ),
-                          ..._programs.map((p) => DropdownMenuItem<int>(
-                                value: p.id,
-                                child: Text(p.name),
-                              )),
-                        ],
-                        onChanged: _onProgramChanged,
-                      ),
-                    ),
-                  ),
-                  const VerticalDivider(color: Colors.white30, width: 20),
-                  // SELECCIONE (ESTACIÓN)
-                  Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: _selectedStationId,
-                        hint: const Text('Seleccione', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                        dropdownColor: Colors.grey[900],
-                        icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                        items: _filteredStations.map((s) => DropdownMenuItem<int>(
-                              value: s.id,
-                              child: Text(s.name, overflow: TextOverflow.ellipsis),
-                            )).toList(),
-                        onChanged: _onStationChanged,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // LOADING INDICATOR
-          if (_isLoading)
-            const Center(child: CircularProgressIndicator(color: Colors.white)),
-
-          // BOTONES DE ZOOM (Bottom Left)
-          Positioned(
-            bottom: 20,
-            left: 20,
-            child: Column(
               children: [
-                _buildMapActionButton(
-                  onPressed: () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1),
-                  icon: Icons.add,
+                TileLayer(
+                  urlTemplate: _currentLayerUrl,
+                  userAgentPackageName: 'com.example.monitoreo_app',
+                  tileProvider: _cachePath != null 
+                    ? CachedTileProvider(
+                        store: FileCacheStore(_cachePath!),
+                      )
+                    : null, // Fallback to network if path not ready
                 ),
-                const SizedBox(height: 8),
-                _buildMapActionButton(
-                  onPressed: () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1),
-                  icon: Icons.remove,
+                MarkerLayer(
+                  markers: _filteredStations.map((s) {
+                    final isSelected = s.id == _selectedStationId;
+                    return Marker(
+                      point: LatLng(
+                        double.parse(s.latitude.toString()), 
+                        double.parse(s.longitude.toString()),
+                      ),
+                      width: 80,
+                      height: 80,
+                      child: GestureDetector(
+                        onTap: () => _showStationDetails(s),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              color: isSelected ? Colors.yellow : Colors.red,
+                              size: isSelected ? 45 : 35,
+                              shadows: const [Shadow(blurRadius: 10, color: Colors.black)],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              s.name,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                shadows: [
+                                  Shadow(color: Colors.black, blurRadius: 2.0, offset: Offset(1, 1))
+                                ],
+                              ),
+                              textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution(
+                      'Esri | DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
+                    ),
+                  ],
                 ),
               ],
             ),
-          ),
 
-          // BOTÓN DE CAPAS (Top Right - Below Filter)
-          Positioned(
-            top: 70,
-            right: 20,
-            child: Theme(
-              data: Theme.of(context).copyWith(
-                hoverColor: Colors.transparent,
-                splashColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-              ),
-              child: PopupMenuButton<String>(
-                onSelected: (String url) {
-                  setState(() => _currentLayerUrl = url);
-                },
-                offset: const Offset(0, 45),
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                color: Colors.white,
-                padding: EdgeInsets.zero,
-                tooltip: 'Cambiar Capa',
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  _buildLayerMenuItem('Mapa', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
-                  const PopupMenuDivider(height: 1),
-                  _buildLayerMenuItem('Carreteras', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'),
-                  const PopupMenuDivider(height: 1),
-                  _buildLayerMenuItem('Satélite', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
-                ],
-                child: _buildMapActionButton(
-                  onPressed: null, // El PopupMenuButton maneja el tap
-                  icon: Icons.layers,
+            // CONTROLES DE FILTRO (Barra Negra Superior)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                color: Colors.black.withOpacity(0.85),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    // PROGRAMA
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _selectedProgramId,
+                          hint: const Text('Programa', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          dropdownColor: Colors.grey[900],
+                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          items: [
+                            const DropdownMenuItem<int>(
+                              value: null,
+                              child: Text('Todos los Programas'),
+                            ),
+                            ..._programs.map((p) => DropdownMenuItem<int>(
+                                  value: p.id,
+                                  child: Text(p.name),
+                                )),
+                          ],
+                          onChanged: _onProgramChanged,
+                        ),
+                      ),
+                    ),
+                    const VerticalDivider(color: Colors.white30, width: 20),
+                    // SELECCIONE (ESTACIÓN)
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _selectedStationId,
+                          hint: const Text('Seleccione', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          dropdownColor: Colors.grey[900],
+                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          items: _filteredStations.map((s) => DropdownMenuItem<int>(
+                                value: s.id,
+                                child: Text(s.name, overflow: TextOverflow.ellipsis),
+                              )).toList(),
+                          onChanged: _onStationChanged,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+
+            // LOADING INDICATOR
+            if (_isLoading)
+              const Center(child: CircularProgressIndicator(color: Colors.white)),
+
+            // BOTONES DE ZOOM (Bottom Left)
+            Positioned(
+              bottom: 20,
+              left: 20,
+              child: Column(
+                children: [
+                  _buildMapActionButton(
+                    onPressed: () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom + 1),
+                    icon: Icons.add,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildMapActionButton(
+                    onPressed: () => _mapController.move(_mapController.camera.center, _mapController.camera.zoom - 1),
+                    icon: Icons.remove,
+                  ),
+                ],
+              ),
+            ),
+
+            // BOTÓN DE CAPAS (Top Right - Below Filter)
+            Positioned(
+              top: 70,
+              right: 20,
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  hoverColor: Colors.transparent,
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                ),
+                child: PopupMenuButton<String>(
+                  onSelected: (String url) {
+                    setState(() => _currentLayerUrl = url);
+                  },
+                  offset: const Offset(0, 45),
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  color: Colors.white,
+                  padding: EdgeInsets.zero,
+                  tooltip: 'Cambiar Capa',
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    _buildLayerMenuItem('Mapa', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                    const PopupMenuDivider(height: 1),
+                    _buildLayerMenuItem('Carreteras', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'),
+                    const PopupMenuDivider(height: 1),
+                    _buildLayerMenuItem('Satélite', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
+                  ],
+                  child: _buildMapActionButton(
+                    onPressed: null, // El PopupMenuButton maneja el tap
+                    icon: Icons.layers,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

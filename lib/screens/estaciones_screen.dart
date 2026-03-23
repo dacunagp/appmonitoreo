@@ -111,7 +111,6 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
               ],
             ),
           ),
-           
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCELAR')),
             ElevatedButton(
@@ -193,101 +192,114 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
       return matchesSearch && matchesProgram;
     }).toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Estaciones'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _refreshData(),
-          ),
-        ],
-      ),
-      drawer: const AppDrawer(currentRoute: '/estaciones'),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Estaciones'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => _refreshData(),
+            ),
+          ],
+        ),
+        drawer: const AppDrawer(currentRoute: '/estaciones'),
+        body: _isLoading
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 20),
+                    Text(
+                      _loadingMessage,
+                      style: const TextStyle(fontSize: 16, color: Colors.blue),
+                    ),
+                  ],
+                ),
+              )
+            : Column(
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 20),
-                  Text(
-                    _loadingMessage,
-                    style: const TextStyle(fontSize: 16, color: Colors.blue),
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            decoration: const InputDecoration(
+                              hintText: 'Buscar...',
+                              prefixIcon: Icon(Icons.search),
+                              isDense: true,
+                            ),
+                            onChanged: (value) => setState(() => _searchQuery = value),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 1,
+                          child: DropdownButtonFormField<int?>(
+                            isExpanded: true,
+                            value: _selectedProgramFilter,
+                            decoration: const InputDecoration(
+                              labelText: 'Programa',
+                              isDense: true,
+                            ),
+                            items: [
+                              const DropdownMenuItem(value: null, child: Text("Todos")),
+                              ..._programas.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis))),
+                            ],
+                            onChanged: (val) => setState(() => _selectedProgramFilter = val),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: filteredStations.isEmpty
+                        ? const Center(child: Text('Sin estaciones guardadas'))
+                        : ListView.builder(
+                            itemCount: filteredStations.length,
+                            itemBuilder: (context, index) {
+                              final station = filteredStations[index];
+                              return ListTile(
+                                leading: const CircleAvatar(child: Icon(Icons.location_on)),
+                                title: Text(station['name']),
+                                subtitle: Text('Programa: ${station['program_name'] ?? 'N/A'}'),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Colors.blue),
+                                      onPressed: () => _showFormDialog(station: station),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () => _confirmDelete(station['id']),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
-            )
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextField(
-                          decoration: const InputDecoration(
-                            hintText: 'Buscar...',
-                            prefixIcon: Icon(Icons.search),
-                            isDense: true,
-                          ),
-                          onChanged: (value) => setState(() => _searchQuery = value),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        flex: 1,
-                        child: DropdownButtonFormField<int?>(
-                          isExpanded: true,
-                          value: _selectedProgramFilter,
-                          decoration: const InputDecoration(
-                            labelText: 'Programa',
-                            isDense: true,
-                          ),
-                          items: [
-                            const DropdownMenuItem(value: null, child: Text("Todos")),
-                            ..._programas.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis))),
-                          ],
-                          onChanged: (val) => setState(() => _selectedProgramFilter = val),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: filteredStations.isEmpty
-                      ? const Center(child: Text('Sin estaciones guardadas'))
-                      : ListView.builder(
-                          itemCount: filteredStations.length,
-                          itemBuilder: (context, index) {
-                            final station = filteredStations[index];
-                            return ListTile(
-                              leading: const CircleAvatar(child: Icon(Icons.location_on)),
-                              title: Text(station['name']),
-                              subtitle: Text('Programa: ${station['program_name'] ?? 'N/A'}'),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
-                                    onPressed: () => _showFormDialog(station: station),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () => _confirmDelete(station['id']),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showFormDialog(),
-        child: const Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showFormDialog(),
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }

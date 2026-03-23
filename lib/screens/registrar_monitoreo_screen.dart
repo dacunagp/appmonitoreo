@@ -42,6 +42,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   String? _fotoTurbiedadPath;
   final ImagePicker _picker = ImagePicker();
   final ScreenshotController _screenshotController = ScreenshotController();
+  double? _estacionLatitud;
+  double? _estacionLongitud;
 
   // Listas para dropdowns
   List<Program> _programas = [];
@@ -87,12 +89,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   // --- VALIDATION GETTERS ---
   bool get _isDatosMonitoreoComplete {
     if (_isMonitoreoFallido) return _obsController.text.isNotEmpty;
-    return _programaSeleccionado != null &&
-        _estacionSeleccionada != null &&
-        _inspectorSeleccionado != null &&
-        _matrizSeleccionada != null &&
-        _fechaYHoraMuestreo != null &&
-        _imagePath != null;
+    return _programaSeleccionado != null && 
+           _estacionSeleccionada != null && 
+           _inspectorSeleccionado != null;
   }
 
   bool get _isMultiparametroComplete {
@@ -116,20 +115,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   bool get _isFormularioCompleto {
-    if (_programaSeleccionado == null || _estacionSeleccionada == null) return false;
-    if (_isMonitoreoFallido) return _obsController.text.trim().isNotEmpty;
-    
-    if (!_isDatosMonitoreoComplete) return false;
-    
-    if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)) {
-      if (_equipoNivelSeleccionado == null || _tipoNivelPozoSeleccionado == null || _nivelTerrenoController.text.isEmpty || _fechaYHoraNivel == null) return false;
-    }
-    
-    if (!_isMultiparametroComplete) return false;
-    if (!_isTurbiedadComplete) return false;
-    if (!_isMuestreoComplete) return false;
-    
-    return true;
+    return _isDatosMonitoreoComplete;
   }
 
   @override
@@ -204,6 +190,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'equipo_nivel_id': _equiposMulti.where((e) => e.codigo == _equipoNivelSeleccionado).firstOrNull?.id,
         'tipo_pozo': _tipoNivelPozoSeleccionado,
         'fecha_hora_nivel': _fechaYHoraNivel?.toIso8601String(),
+        'latitud': _estacionLatitud,
+        'longitud': _estacionLongitud,
+        'temperatura': double.tryParse(_tempController.text),
+        'ph': double.tryParse(_phController.text),
+        'conductividad': double.tryParse(_condController.text),
+        'oxigeno': double.tryParse(_oxigenoController.text),
+        'turbiedad': double.tryParse(_turbiedadController.text),
+        'profundidad': double.tryParse(_profundidadController.text),
+        'nivel': double.tryParse(_nivelTerrenoController.text),
         'is_draft': isDraft ? 1 : 0,
       };
 
@@ -212,35 +207,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         header.remove('id');
       }
 
-      // 2. Build Details List (Parameters)
+      // 2. Build Details List (Parameters) - Empty as we now use flattened schema
       List<Map<String, dynamic>> detalles = [];
-      String stationName = _estacionSeleccionada?.name ?? 'S/N';
-      String fechaStr = _fechaYHoraMuestreo?.toIso8601String() ?? DateTime.now().toIso8601String();
-
-      // Mapping of controllers to internal keys
-      final paramsMap = {
-        'temperatura': _tempController,
-        'ph': _phController,
-        'conductividad': _condController,
-        'oxigeno': _oxigenoController,
-        'turbiedad': _turbiedadController,
-        'profundidad': _profundidadController,
-        'nivel': _nivelTerrenoController,
-      };
-
-      paramsMap.forEach((key, controller) {
-        if (controller.text.isNotEmpty) {
-          final val = double.tryParse(controller.text);
-          if (val != null) {
-            detalles.add({
-              'estacion': stationName,
-              'fecha': fechaStr,
-              'parametro': key,
-              'valor': val,
-            });
-          }
-        }
-      });
 
       // 3. Save via Transaction
       final id = await _dbHelper.saveMonitoreoTransaction(header, detalles);
@@ -383,26 +351,16 @@ _equipoMultiparametroSeleccionado = eq.codigo;
         _fechaYHoraNivel = DateTime.parse(data['fecha_hora_nivel']);
       }
 
-      // 4. Load details from historial_mediciones
-      _dbHelper.database.then((db) async {
-        final details = await db.query('historial_mediciones', where: 'monitoreo_id = ?', whereArgs: [id]);
-        setState(() {
-          for (var row in details) {
-            final param = row['parametro'];
-            final value = row['valor'].toString();
-            
-            switch (param) {
-              case 'temperatura': _tempController.text = value; break;
-              case 'ph': _phController.text = value; break;
-              case 'conductividad': _condController.text = value; break;
-              case 'oxigeno': _oxigenoController.text = value; break;
-              case 'turbiedad': _turbiedadController.text = value; break;
-              case 'profundidad': _profundidadController.text = value; break;
-              case 'nivel': _nivelTerrenoController.text = value; break;
-            }
-          }
-        });
-      });
+      // 4. Flattened Loading: Load parameters directly from data map
+      _tempController.text = data['temperatura']?.toString() ?? '';
+      _phController.text = data['ph']?.toString() ?? '';
+      _condController.text = data['conductividad']?.toString() ?? '';
+      _oxigenoController.text = data['oxigeno']?.toString() ?? '';
+      _turbiedadController.text = data['turbiedad']?.toString() ?? '';
+      _profundidadController.text = data['profundidad']?.toString() ?? '';
+      _nivelTerrenoController.text = data['nivel']?.toString() ?? '';
+      _estacionLatitud = data['latitud'];
+      _estacionLongitud = data['longitud'];
 
       _imagePath = data['foto_path'];
       _fotoMultiparametroPath = data['foto_multiparametro'];
@@ -450,6 +408,8 @@ _equipoMultiparametroSeleccionado = eq.codigo;
     final station = _estaciones.firstWhere((s) => s.name == name);
     setState(() {
       _estacionSeleccionada = station;
+      _estacionLatitud = station.latitude;
+      _estacionLongitud = station.longitude;
     });
 
     await _updateHistoricalRanges(station.name);
@@ -539,6 +499,13 @@ _equipoMultiparametroSeleccionado = eq.codigo;
           estacion: _estacionSeleccionada!.name,
           parametro: parameterKey,
           currentInputValue: double.tryParse(controller.text),
+          onValueUpdated: (double newValue) {
+            // 🚨 UPDATE CONTROLLER & TRIGGER DRAFT SAVE
+            setState(() {
+              controller.text = newValue.toStringAsFixed(2);
+            });
+            _saveAsDraft();
+          },
         ),
       ),
     ).then((_) {
@@ -566,26 +533,10 @@ _equipoMultiparametroSeleccionado = eq.codigo;
   Future<void> _guardarMonitoreo() async {
     // 1. Strict Validation
     if (!_isFormularioCompleto) {
-      if (_programaSeleccionado == null || _estacionSeleccionada == null) {
-        _showError('Debe seleccionar Programa y Punto de Control');
-      } else if (_isMonitoreoFallido) {
-        if (_obsController.text.trim().isEmpty) {
-          _showError('Debe ingresar una observación explicando por qué falló el monitoreo.');
-        }
+      if (_isMonitoreoFallido && _obsController.text.trim().isEmpty) {
+        _showError('Debe ingresar una observación explicando por qué falló el monitoreo.');
       } else {
-        if (!_isDatosMonitoreoComplete) {
-          _showError('Faltan Datos de Monitoreo (Ej. Inspector, Matriz, Foto).');
-        } else if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false)) {
-          if (_equipoNivelSeleccionado == null || _tipoNivelPozoSeleccionado == null || _nivelTerrenoController.text.isEmpty || _fechaYHoraNivel == null) {
-            _showError('Faltan datos obligatorios en la sección Nivel Freático.');
-          }
-        } else if (!_isMultiparametroComplete) {
-          _showError('Faltan datos en la sección Multiparámetro (o su fotografía).');
-        } else if (!_isTurbiedadComplete) {
-          _showError('Faltan datos en la sección Turbiedad (o su fotografía).');
-        } else if (!_isMuestreoComplete) {
-          _showError('Faltan datos en la sección Muestreo.');
-        }
+        _showError('Debe seleccionar Programa, Punto de Control e Inspector para guardar.');
       }
       return;
     }
@@ -725,7 +676,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                     setState(() => _fechaYHoraNivel = DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute));
                   },
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
               ],
               leadingIcon: Icons.water_drop,
             ),
@@ -759,7 +710,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   isDarkMode: isDarkMode,
                 ),
               ],
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
             ]),
 
             // --- SECCIÓN 3: TURBIEDAD ---
@@ -798,7 +749,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   isDarkMode: isDarkMode,
                 ),
               ],
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
             ]),
             
             // --- SECCIÓN 4: MUESTREO ---
@@ -1951,77 +1902,65 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      dense: true,
-      leading: SizedBox(
-        width: 32,
-        child: widget.showLeadingIcon 
-            ? Icon(
-                _isValidated ? Icons.check_circle : (_isOutOfRange ? Icons.error : Icons.cancel), 
-                // Prominent Red for out-of-range error
-                color: _isValidated ? Colors.greenAccent : (_isOutOfRange ? Colors.redAccent : (widget.isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400)), 
-                size: 24
-              )
-            : null,
-      ),
-      title: Text(widget.label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
-      // Replaced custom Column with native errorText and errorBorder handling
-      subtitle: TextField(
-        controller: widget.controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        onChanged: (val) => widget.onPulseTap != null ? null : setState(() {}), // Ensure reactivity if No Tap
-        style: TextStyle(
-          fontSize: 16, 
-          // Turn the typed text red if it's out of range
-          color: _isOutOfRange ? Colors.redAccent : (widget.isDarkMode ? Colors.white : Colors.black87)
-        ),
-        decoration: InputDecoration(
-          hintText: widget.hintText,
-          hintStyle: TextStyle(
-            color: widget.isDarkMode ? Colors.grey.shade400 : Colors.black54, 
-            fontSize: 16
-          ),
-          // 🚨 Native Error Styling Magic
-          errorText: _isOutOfRange 
-              ? (!widget.hasHistory || widget.minAllowed == null 
-                  ? 'Anómalo: Sin historial previo' 
-                  : 'Anómalo: Fuera de rango 3σ') 
-              : null,
-          errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Icono Indicador
+          if (widget.showLeadingIcon)
+            Icon(
+              _isValidated ? Icons.check_circle : (_isOutOfRange ? Icons.error : Icons.cancel), 
+              color: _isValidated ? Colors.greenAccent : (_isOutOfRange ? Colors.redAccent : (widget.isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400)), 
+              size: 24
+            ),
           
-          // Hide borders normally, but show red underline on error
-          border: InputBorder.none,
-          errorBorder: const UnderlineInputBorder(
-            borderSide: BorderSide(color: Colors.redAccent, width: 1.5),
+          const SizedBox(width: 16),
+          
+          // Input Field (Exact UI Match)
+          Expanded(
+            child: TextField(
+              controller: widget.controller,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (val) => widget.onPulseTap != null ? null : setState(() {}),
+              style: TextStyle(color: widget.isDarkMode ? Colors.white : Colors.black),
+              decoration: InputDecoration(
+                labelText: widget.label, // Floating label inside the field
+                hintText: widget.hintText,
+                labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                hintStyle: TextStyle(color: widget.isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
+                border: InputBorder.none,
+                isDense: true,
+                errorText: _isOutOfRange 
+                    ? (!widget.hasHistory || widget.minAllowed == null 
+                        ? 'Anómalo: Sin historial' 
+                        : 'Anómalo: Fuera de rango') 
+                    : null,
+                errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            ),
           ),
-          focusedErrorBorder: const UnderlineInputBorder(
-            borderSide: BorderSide(color: Colors.redAccent, width: 2.0),
-          ),
-          isDense: true,
-          contentPadding: const EdgeInsets.only(top: 4.0, bottom: 4.0),
-        ),
-      ),
-      trailing: widget.showPulseIcon 
-          ? Padding(
-              padding: const EdgeInsets.only(right: 8.0),
-              child: GestureDetector(
-                onTap: widget.onPulseTap,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.blueAccent, width: 1.5),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.monitor_heart_outlined, 
-                    color: Colors.blueAccent, 
-                    size: 22
-                  ),
+          
+          // Icono de Pulso (Gráfico)
+          if (widget.showPulseIcon)
+            GestureDetector(
+              onTap: widget.onPulseTap,
+              child: Container(
+                margin: const EdgeInsets.only(left: 8.0),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.blueAccent, width: 1.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.monitor_heart_outlined, 
+                  color: Colors.blueAccent, 
+                  size: 20
                 ),
               ),
-            )
-          : null,
+            ),
+        ],
+      ),
     );
   }
 }

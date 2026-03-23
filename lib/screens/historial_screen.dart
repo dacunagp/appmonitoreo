@@ -176,194 +176,207 @@ class _HistorialScreenState extends State<HistorialScreen> {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Historial de Muestras'),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _selectedDate == null ? Icons.filter_list : Icons.filter_list_off,
-              color: _selectedDate != null ? Colors.orange : (isDarkMode ? Colors.white : null),
-            ),
-            onPressed: () => _selectDate(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _showDeleteAllConfirmation,
-            color: isDarkMode ? Colors.white : null,
-          ),
-        ],
-      ),
-      drawer: const AppDrawer(currentRoute: '/historial'),
-      body: Column(
-        children: [
-          // Search Bar - Relaxed Pill Shape
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-            child: Container(
-              decoration: BoxDecoration(
-                boxShadow: isDarkMode
-                    ? null
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: const Text('Historial de Muestras'),
+          actions: [
+            IconButton(
+              icon: Icon(
+                _selectedDate == null ? Icons.filter_list : Icons.filter_list_off,
+                color: _selectedDate != null ? Colors.orange : (isDarkMode ? Colors.white : null),
               ),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _filterPoints,
-                style: TextStyle(
-                  color: isDarkMode ? Colors.white : Colors.black87,
+              onPressed: () => _selectDate(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _showDeleteAllConfirmation,
+              color: isDarkMode ? Colors.white : null,
+            ),
+          ],
+        ),
+        drawer: const AppDrawer(currentRoute: '/historial'),
+        body: Column(
+          children: [
+            // Search Bar - Relaxed Pill Shape
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              child: Container(
+                decoration: BoxDecoration(
+                  boxShadow: isDarkMode
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                 ),
-                decoration: InputDecoration(
-                  hintText: 'Buscar punto de monitoreo...',
-                  hintStyle: TextStyle(
-                    color: isDarkMode ? Colors.grey.shade400 : Colors.grey,
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _filterPoints,
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white : Colors.black87,
                   ),
-                  prefixIcon: Icon(
-                    Icons.search,
-                    size: 20,
-                    color: isDarkMode ? Colors.white : Colors.grey,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 15),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(30),
-                    borderSide: BorderSide(
-                        color: theme.primaryColor.withOpacity(0.5), width: 1),
+                  decoration: InputDecoration(
+                    hintText: 'Buscar punto de monitoreo...',
+                    hintStyle: TextStyle(
+                      color: isDarkMode ? Colors.grey.shade400 : Colors.grey,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 20,
+                      color: isDarkMode ? Colors.white : Colors.grey,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide.none,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(30),
+                      borderSide: BorderSide(
+                          color: theme.primaryColor.withOpacity(0.5), width: 1),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          // List
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredPoints.isEmpty
-                    ? const Center(
-                        child: Text('No se encontraron puntos de monitoreo'))
-                    : ListView.builder(
-                        itemCount: _filteredPoints.length,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        itemBuilder: (context, index) {
-                          final point = _filteredPoints[index];
-                          final stationName = point['estacion'];
+            // List
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredPoints.isEmpty
+                      ? const Center(
+                          child: Text('No se encontraron puntos de monitoreo'))
+                      : ListView.builder(
+                          itemCount: _filteredPoints.length,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          itemBuilder: (context, index) {
+                            final point = _filteredPoints[index];
+                            final stationName = point['estacion'];
 
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 6),
-                            child: Dismissible(
-                              key: Key(stationName),
-                              direction: DismissDirection.endToStart,
-                              confirmDismiss: (direction) async {
-                                await _deleteStationGroup(stationName);
-                                return false;
-                              },
-                              background: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.redAccent,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                alignment: Alignment.centerRight,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 20),
-                                child: const Icon(Icons.delete_outline,
-                                    color: Colors.white),
-                              ),
-                              child: Card(
-                                margin: EdgeInsets.zero,
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 8),
-                                  leading: CircleAvatar(
-                                    backgroundColor: isDarkMode
-                                        ? Colors.blueAccent.withAlpha(30)
-                                        : const Color(
-                                            0xFFE3F2FD), // Light gray-blue
-                                    child: const Icon(Icons.science,
-                                        color: Colors.blueAccent),
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 6),
+                              child: Dismissible(
+                                key: Key(stationName),
+                                direction: DismissDirection.endToStart,
+                                confirmDismiss: (direction) async {
+                                  await _deleteStationGroup(stationName);
+                                  return false;
+                                },
+                                background: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent,
+                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  title: Text(
-                                    stationName,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: isDarkMode
-                                          ? Colors.white
-                                          : const Color(0xFF212121),
-                                      fontSize: 16,
+                                  alignment: Alignment.centerRight,
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 20),
+                                  child: const Icon(Icons.delete_outline,
+                                      color: Colors.white),
+                                ),
+                                child: Card(
+                                  margin: EdgeInsets.zero,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    leading: CircleAvatar(
+                                      backgroundColor: isDarkMode
+                                          ? Colors.blueAccent.withAlpha(30)
+                                          : const Color(
+                                              0xFFE3F2FD), // Light gray-blue
+                                      child: const Icon(Icons.science,
+                                          color: Colors.blueAccent),
                                     ),
+                                    title: Text(
+                                      stationName,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: isDarkMode
+                                            ? Colors.white
+                                            : const Color(0xFF212121),
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Última sincronización',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: isDarkMode
+                                                ? Colors.grey.shade400
+                                                : theme.hintColor,
+                                          ),
+                                        ),
+                                        Text(
+                                          point['last_sync_date'],
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: isDarkMode
+                                                ? Colors.grey.shade300
+                                                : const Color(0xFF757575),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    trailing: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          '${point['count']}',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                            color: isDarkMode
+                                                ? Colors.blueAccent
+                                                : theme.primaryColor,
+                                          ),
+                                        ),
+                                        Text(
+                                          'muestras',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: isDarkMode
+                                                ? Colors.blueAccent.withOpacity(0.8)
+                                                : Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () {},
                                   ),
-                                  subtitle: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Última sincronización',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: isDarkMode
-                                              ? Colors.grey.shade400
-                                              : theme.hintColor,
-                                        ),
-                                      ),
-                                      Text(
-                                        point['last_sync_date'],
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: isDarkMode
-                                              ? Colors.grey.shade300
-                                              : const Color(0xFF757575),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  trailing: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        '${point['count']}',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                          color: isDarkMode
-                                              ? Colors.blueAccent
-                                              : theme.primaryColor,
-                                        ),
-                                      ),
-                                      Text(
-                                        'muestras',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: isDarkMode
-                                              ? Colors.blueAccent.withOpacity(0.8)
-                                              : Colors.grey,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  onTap: () {},
                                 ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }

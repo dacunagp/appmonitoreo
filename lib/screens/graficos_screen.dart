@@ -8,7 +8,6 @@ import '../models/models.dart';
 import '../providers/graph_provider.dart';
 import 'registrar_monitoreo_screen.dart'; // To use SearchableDropdown
 
-
 class GraficosScreen extends StatefulWidget {
   const GraficosScreen({super.key});
 
@@ -113,63 +112,76 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
     super.build(context);
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gráficos'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {},
-          ),
-        ],
-      ),
-      drawer: const AppDrawer(currentRoute: '/graficos'),
-      body: Column(
-        children: [
-          // 1. Chart Area
-          _buildChartContent(isDarkMode),
-
-          Container(
-            height: 250,
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, -2),
-                ),
-              ],
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Gráficos'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: () {},
             ),
-            child: Column(
-              children: [
-                TabBar(
-                  controller: _tabController,
-                  indicatorColor: Colors.blue,
-                  labelColor: Colors.blue,
-                  unselectedLabelColor: isDarkMode ? Colors.grey.shade400 : Colors.black54,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  onTap: (index) => setState(() {}),
-                  tabs: const [
-                    Tab(icon: Icon(Icons.show_chart, size: 20), text: 'GRAFICAR'),
-                    Tab(icon: Icon(Icons.settings, size: 20), text: 'OPCIONES'),
-                  ],
-                ),
-                Expanded(
-                  child: IndexedStack(
-                    index: _tabController.index,
-                    children: [
-                      // View 1: Graficar
-                      _buildGraficarView(isDarkMode),
-                      // View 2: Opciones
-                      _buildOpcionesView(),
+          ],
+        ),
+        drawer: const AppDrawer(currentRoute: '/graficos'),
+        body: Column(
+          children: [
+            // 1. Chart Area
+            _buildChartContent(isDarkMode),
+
+            Container(
+              height: 250,
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  TabBar(
+                    controller: _tabController,
+                    indicatorColor: Colors.blue,
+                    labelColor: Colors.blue,
+                    unselectedLabelColor: isDarkMode ? Colors.grey.shade400 : Colors.black54,
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    onTap: (index) => setState(() {}),
+                    tabs: const [
+                      Tab(icon: Icon(Icons.show_chart, size: 20), text: 'GRAFICAR'),
+                      Tab(icon: Icon(Icons.settings, size: 20), text: 'OPCIONES'),
                     ],
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: IndexedStack(
+                      index: _tabController.index,
+                      children: [
+                        // View 1: Graficar
+                        _buildGraficarView(isDarkMode),
+                        // View 2: Opciones
+                        _buildOpcionesView(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
