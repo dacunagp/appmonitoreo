@@ -57,7 +57,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 5, // 🚀 BUMP A VERSIÓN 5
+      version: 6, // 🚀 BUMP A VERSIÓN 6
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -151,6 +151,17 @@ class DatabaseHelper {
         await _log('✅ [UPGRADE] Endpoint local configurado como activo.');
       } catch (e) {
         await _log('⚠️ [UPGRADE] Error al migrar a v5 (Local IP): $e');
+      }
+    }
+
+    if (oldVersion < 6) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando columna sync_status a monitoreos...');
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN sync_status TEXT DEFAULT 'pending';");
+        // Retroactively mark existing synced records as success
+        await db.execute("UPDATE monitoreos SET sync_status = 'success' WHERE is_draft = 2;");
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando sync_status: $e');
       }
     }
   }
@@ -249,7 +260,8 @@ class DatabaseHelper {
         turbiedad REAL,
         profundidad REAL,
         nivel REAL,
-        is_draft INTEGER DEFAULT 0
+        is_draft INTEGER DEFAULT 0,
+        sync_status TEXT DEFAULT 'pending'
       )
     ''');
     
@@ -444,9 +456,25 @@ class DatabaseHelper {
       SELECT m.*, COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion
       FROM monitoreos m
       LEFT JOIN stations s ON m.estacion_id = s.id
-      WHERE m.is_draft = 0
+      WHERE m.is_draft = 0 AND m.sync_status = 'pending'
       ORDER BY m.fecha_hora DESC
     ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getSentMonitoreos() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT m.*, COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion
+      FROM monitoreos m
+      LEFT JOIN stations s ON m.estacion_id = s.id
+      WHERE m.sync_status = 'success'
+      ORDER BY m.fecha_hora DESC
+    ''');
+  }
+
+  Future<int> updateMonitoreoSyncStatus(int id, String status) async {
+    final db = await database;
+    return await db.update('monitoreos', {'sync_status': status}, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<Map<String, dynamic>?> getRegistroMonitoreoById(int id) async {

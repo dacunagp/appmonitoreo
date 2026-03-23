@@ -18,7 +18,8 @@ import 'chart_analysis_screen.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
-  const RegistrarMonitoreoScreen({super.key, this.registroId});
+  final bool isReadOnly;
+  const RegistrarMonitoreoScreen({super.key, this.registroId, this.isReadOnly = false});
 
   @override
   State<RegistrarMonitoreoScreen> createState() => _RegistrarMonitoreoScreenState();
@@ -585,7 +586,9 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       canPop: false,
       onPopInvoked: (bool didPop) async {
         if (didPop) return;
-        await _saveAsDraft();
+        if (!widget.isReadOnly) {
+          await _saveAsDraft();
+        }
         if (context.mounted) {
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop();
@@ -603,6 +606,16 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       drawer: const AppDrawer(currentRoute: '/registrar_monitoreo'),
       body: ListView(
         children: [
+          if (widget.isReadOnly)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              color: Colors.green,
+              alignment: Alignment.center,
+              child: const Text(
+                'MODO LECTURA (REGISTRO ENVIADO)',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
           // --- SECCIÓN 1: DATOS DE MONITOREO ---
           if (_isMonitoreoFallido) ...[
             Container(
@@ -612,13 +625,13 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                 title: const Text('Datos de Monitoreo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white)),
               ),
             ),
-            _buildFormularioDatosMonitoreo(isDarkMode),
+            IgnorePointer(ignoring: widget.isReadOnly, child: _buildFormularioDatosMonitoreo(isDarkMode)),
           ] else
             _buildSectionTile(
               'Datos de Monitoreo',
               isDarkMode,
               _isDatosMonitoreoComplete,
-              [_buildFormularioDatosMonitoreo(isDarkMode)],
+              [IgnorePointer(ignoring: widget.isReadOnly, child: _buildFormularioDatosMonitoreo(isDarkMode))],
             ),
 
           // --- SECCIÓN 1.5: NIVEL FREÁTICO (Condicional) ---
@@ -628,7 +641,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
               isDarkMode,
               _equipoNivelSeleccionado != null && _tipoNivelPozoSeleccionado != null && _nivelTerrenoController.text.isNotEmpty && _fechaYHoraNivel != null,
               [
-                SearchableDropdown(
+                IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
                   label: 'Equipo Nivel',
                   hintText: 'Seleccione equipo de nivel',
                   searchHintText: 'Buscar equipo...',
@@ -636,8 +649,8 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   options: _equiposMultiOptions,
                   isDarkMode: isDarkMode,
                   onChanged: (val) => setState(() => _equipoNivelSeleccionado = val),
-                ),
-                SearchableDropdown(
+                )),
+                IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
                   label: 'Tipo / Nivel Pozo',
                   hintText: 'Seleccione tipo de pozo',
                   searchHintText: 'Buscar tipo...',
@@ -645,8 +658,9 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   options: const ['Pozo Monitoreo', 'Pozo Producción', 'Cisterna', 'Otro'],
                   isDarkMode: isDarkMode,
                   onChanged: (val) => setState(() => _tipoNivelPozoSeleccionado = val),
-                ),
+                )),
                 CustomParametroInputRow(
+                  isReadOnly: widget.isReadOnly,
                   label: 'Nivel Terreno [m.bnb]',
                   hintText: 'Ingrese nivel terreno',
                   isDarkMode: isDarkMode,
@@ -658,7 +672,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   maxAllowed: _parameterRanges['nivel']?['max'],
                   onPulseTap: () => _navigateToChart('nivel', _nivelTerrenoController),
                 ),
-                CustomFormRow(
+                IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
                   label: 'Hora Medición - Nivel',
                   value: _fechaYHoraNivel == null ? 'Seleccione Hora y Fecha' : _formatearFechaYHora(_fechaYHoraNivel!),
                   isValid: _fechaYHoraNivel != null,
@@ -675,7 +689,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                     if (!mounted || hora == null) return;
                     setState(() => _fechaYHoraNivel = DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute));
                   },
-                ),
+                )),
                 const SizedBox(height: 16),
               ],
               leadingIcon: Icons.water_drop,
@@ -686,7 +700,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
             
             // --- SECCIÓN 2: MULTIPARÁMETRO ---
             _buildSectionTile('Multiparámetro', isDarkMode, _isMultiparametroComplete, [
-              SearchableDropdown(
+              IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
                 label: 'Equipo Multiparametro',
                 hintText: 'Seleccione equipo',
                 searchHintText: 'Buscar equipo...',
@@ -694,13 +708,13 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                 options: _equiposMultiOptions,
                 isDarkMode: isDarkMode,
                 onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
-              ),
+              )),
               if (_equipoMultiparametroSeleccionado != null) ...[
-                CustomParametroInputRow(label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, parameterKey: 'temperatura', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['temperatura']?['min'], maxAllowed: _parameterRanges['temperatura']?['max'], onPulseTap: () => _navigateToChart('temperatura', _tempController)),
-                CustomParametroInputRow(label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, parameterKey: 'ph', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max'], onPulseTap: () => _navigateToChart('ph', _phController)),
-                CustomParametroInputRow(label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, parameterKey: 'conductividad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['conductividad']?['min'], maxAllowed: _parameterRanges['conductividad']?['max'], onPulseTap: () => _navigateToChart('conductividad', _condController)),
-                CustomParametroInputRow(label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, parameterKey: 'oxigeno', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max'], onPulseTap: () => _navigateToChart('oxigeno', _oxigenoController)),
-                _buildEquipmentPhotoFullPreview(
+                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, parameterKey: 'temperatura', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['temperatura']?['min'], maxAllowed: _parameterRanges['temperatura']?['max'], onPulseTap: () => _navigateToChart('temperatura', _tempController)),
+                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, parameterKey: 'ph', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max'], onPulseTap: () => _navigateToChart('ph', _phController)),
+                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, parameterKey: 'conductividad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['conductividad']?['min'], maxAllowed: _parameterRanges['conductividad']?['max'], onPulseTap: () => _navigateToChart('conductividad', _condController)),
+                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, parameterKey: 'oxigeno', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max'], onPulseTap: () => _navigateToChart('oxigeno', _oxigenoController)),
+                IgnorePointer(ignoring: widget.isReadOnly, child: _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA MULTIPARÁMETRO',
                   path: _fotoMultiparametroPath,
                   isProcessing: _isProcessingMulti,
@@ -708,24 +722,25 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   onClear: () => setState(() => _fotoMultiparametroPath = null),
                   onVerificar: () => _sharePhoto(_fotoMultiparametroPath!),
                   isDarkMode: isDarkMode,
-                ),
+                )),
               ],
               const SizedBox(height: 16),
             ]),
 
             // --- SECCIÓN 3: TURBIEDAD ---
             _buildSectionTile('Turbiedad', isDarkMode, _isTurbiedadComplete, [
-              SearchableDropdown(
-                label: 'Turbidimetro',
-                hintText: 'Seleccione equipo',
-                searchHintText: 'Buscar equipo...',
-                selectedValue: _turbidimetroSeleccionado,
-                options: _turbidimetrosOptions,
-                isDarkMode: isDarkMode,
-                onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
-              ),
-              if (_turbidimetroSeleccionado != null) ...[
-                CustomParametroInputRow(
+                IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
+                  label: 'Turbidimetro',
+                  hintText: 'Seleccione equipo',
+                  searchHintText: 'Buscar equipo...',
+                  selectedValue: _turbidimetroSeleccionado,
+                  options: _turbidimetrosOptions,
+                  isDarkMode: isDarkMode,
+                  onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
+                )),
+                if (_turbidimetroSeleccionado != null) ...[
+                  CustomParametroInputRow(
+                    isReadOnly: widget.isReadOnly,
                   label: 'Turbiedad [NTU]',
                   hintText: 'Ingrese turbiedad',
                   isDarkMode: isDarkMode,
@@ -739,7 +754,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   bypassValidation: true, // 🚨 CRITICAL: Force green check for valid numbers
                   onPulseTap: () => _navigateToChart('turbiedad', _turbiedadController),
                 ),
-                _buildEquipmentPhotoFullPreview(
+                IgnorePointer(ignoring: widget.isReadOnly, child: _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA TURBIEDAD',
                   path: _fotoTurbiedadPath,
                   isProcessing: _isProcessingTurb,
@@ -747,14 +762,14 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   onClear: () => setState(() => _fotoTurbiedadPath = null),
                   onVerificar: () => _sharePhoto(_fotoTurbiedadPath!),
                   isDarkMode: isDarkMode,
-                ),
+                )),
               ],
               const SizedBox(height: 16),
             ]),
             
             // --- SECCIÓN 4: MUESTREO ---
             _buildSectionTile('Muestreo', isDarkMode, _isMuestreoComplete, [
-              SearchableDropdown(
+              IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
                 label: 'Método de Muestreo',
                 hintText: 'Seleccione método de muestreo',
                 searchHintText: 'Buscar método...',
@@ -764,8 +779,8 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                 onChanged: (val) {
                   setState(() => _metodoSeleccionado = _metodos.firstWhere((m) => m.metodo == val));
                 },
-              ),
-              CustomFormRow(
+              )),
+              IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
                 label: 'Muestreo Hidroquímico', 
                 value: _muestreoHidroquimico == null ? '[Si Aplica]' : (_muestreoHidroquimico! ? 'SI' : 'NO'), 
                 isValid: _muestreoHidroquimico != null,
@@ -774,8 +789,8 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   final result = await _mostrarDialogoSiNo('Muestreo Hidroquímico', _muestreoHidroquimico);
                   if (mounted && result != null) setState(() => _muestreoHidroquimico = result);
                 }
-              ),
-              CustomFormRow(
+              )),
+              IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
                 label: 'Muestreo Isotópico', 
                 value: _muestreoIsotopico == null ? '[Si Aplica]' : (_muestreoIsotopico! ? 'SI' : 'NO'), 
                 isValid: _muestreoIsotopico != null,
@@ -784,9 +799,9 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   final result = await _mostrarDialogoSiNo('Muestreo Isotópico', _muestreoIsotopico);
                   if (mounted && result != null) setState(() => _muestreoIsotopico = result);
                 }
-              ),
+              )),
               // REACTIVE Código Laboratorio
-              ValueListenableBuilder<TextEditingValue>(
+              IgnorePointer(ignoring: widget.isReadOnly, child: ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _codLabController,
                 builder: (context, value, child) {
                   final bool hasText = value.text.trim().isNotEmpty;
@@ -820,11 +835,11 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                     ),
                   );
                 },
-              ),
+              )),
               const Divider(height: 1),
               const SizedBox(height: 16),
               // REACTIVE Descripción / Observación
-              ValueListenableBuilder<TextEditingValue>(
+              IgnorePointer(ignoring: widget.isReadOnly, child: ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _obsController,
                 builder: (context, value, child) {
                   final bool hasText = value.text.trim().isNotEmpty;
@@ -861,15 +876,16 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                     ),
                   );
                 },
-              ),
+              )),
               const SizedBox(height: 8),
             ]),
             const SizedBox(height: 16),
           ],
 
           // --- 5. BOTÓN DE GUARDAR ---
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+          if (!widget.isReadOnly)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
             child: OutlinedButton.icon(
               onPressed: _isSaving ? null : _guardarMonitoreo,
               icon: _isSaving 
@@ -1024,7 +1040,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
             },
             ),
           
-          _buildPhotoPreview(isDarkMode),
+          IgnorePointer(ignoring: widget.isReadOnly, child: _buildPhotoPreview(isDarkMode)),
           
           const SizedBox(height: 8),
         ],
@@ -1810,6 +1826,7 @@ class CustomParametroInputRow extends StatefulWidget {
   final String parameterKey; // e.g., 'nivel', 'ph', 'temperatura'
   final String selectedEstacion;
   final bool bypassValidation; // 🚨 NEW
+  final bool isReadOnly;
 
   const CustomParametroInputRow({
     super.key,
@@ -1827,6 +1844,7 @@ class CustomParametroInputRow extends StatefulWidget {
     this.hasHistory = false,
     this.onPulseTap,
     this.bypassValidation = false, // Default to false to keep standard behavior
+    this.isReadOnly = false,
   });
 
   @override
@@ -1920,6 +1938,7 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
           // Input Field (Exact UI Match)
           Expanded(
             child: TextField(
+              readOnly: widget.isReadOnly,
               controller: widget.controller,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               onChanged: (val) => widget.onPulseTap != null ? null : setState(() {}),

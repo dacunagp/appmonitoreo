@@ -15,21 +15,25 @@ class EnviarDatosScreen extends StatefulWidget {
 
 class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
-  List<Map<String, dynamic>> _records = [];
+  List<Map<String, dynamic>> _recordsPending = [];
+  List<Map<String, dynamic>> _recordsSent = [];
   Set<int> _selectedIds = {};
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadPendingData();
+    _loadData();
   }
 
-  Future<void> _loadPendingData() async {
+  Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final data = await _dbHelper.getPendingToSendMonitoreos();
+    final pendingData = await _dbHelper.getPendingToSendMonitoreos();
+    final sentData = await _dbHelper.getSentMonitoreos();
+    
     setState(() {
-      _records = data;
+      _recordsPending = pendingData;
+      _recordsSent = sentData;
       _isLoading = false;
       _selectedIds.clear();
     });
@@ -89,7 +93,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
       final List<Map<String, dynamic>> payloadList = [];
       
-      for (var record in _records) {
+      for (var record in _recordsPending) {
         if (_selectedIds.contains(record['id'])) {
           await _log('📦 [SYNC] Procesando registro ID: ${record['id']} (${record['nombre_estacion']})');
           
@@ -156,9 +160,29 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       await _log('📄 [SYNC] Body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // Mark as sent (is_draft = 2)
-        for (int id in _selectedIds) {
-          await _dbHelper.updateMonitoreoStatus(id, 2);
+        try {
+          final jsonResponse = jsonDecode(response.body);
+          if (jsonResponse['status'] == 'success' && jsonResponse['data'] != null) {
+            List<dynamic> syncedIdsDyn = jsonResponse['data']['synced_ids'] ?? [];
+            List<int> syncedIds = syncedIdsDyn.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e > 0).toList();
+            
+            await _log('✅ [SYNC] Identificadores sincronizados confirmados: $syncedIds');
+
+            for (int id in syncedIds) {
+              await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
+            }
+          } else {
+             await _log('⚠️ [SYNC] Respuesta 200 pero sin estructura esperada.');
+             // Fallback standard behavior if format changes back
+             for (int id in _selectedIds) {
+               await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
+             }
+          }
+        } catch (e) {
+          await _log('⚠️ [SYNC] No se pudo parsear synced_ids, marcando fallback: $e');
+          for (int id in _selectedIds) {
+            await _dbHelper.updateMonitoreoSyncStatus(id, 'success');
+          }
         }
         
         if (mounted) {
@@ -166,7 +190,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Sincronización exitosa.')),
           );
-          _loadPendingData();
+          _loadData();
         }
       } else {
         throw Exception('Servidor respondió con código ${response.statusCode}');
@@ -267,12 +291,9 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                 : _buildPendingList(),
             
             // Tab 2: ENVIADOS
-            const Center(
-              child: Text(
-                'Sin elementos enviados',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ),
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _buildSentList(),
           ],
         ),
       ),
@@ -280,7 +301,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
   }
 
   Widget _buildPendingList() {
-    if (_records.isEmpty) {
+    if (_recordsPending.isEmpty) {
       return const Center(
         child: Text(
           'No hay datos pendientes de envío',
@@ -289,7 +310,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       );
     }
 
-    final bool allSelected = _selectedIds.length == _records.length && _records.isNotEmpty;
+    final bool allSelected = _selectedIds.length == _recordsPending.length && _recordsPending.isNotEmpty;
 
     return Column(
       children: [
@@ -321,7 +342,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                 onChanged: (v) {
                   setState(() {
                     if (v == true) {
-                      _selectedIds = _records.map((r) => r['id'] as int).toSet();
+                      _selectedIds = _recordsPending.map((r) => r['id'] as int).toSet();
                     } else {
                       _selectedIds.clear();
                     }
@@ -350,10 +371,10 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
         // --- DATA LIST ---
         Expanded(
           child: ListView.separated(
-            itemCount: _records.length,
+            itemCount: _recordsPending.length,
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
-              final record = _records[index];
+              final record = _recordsPending[index];
               final int id = record['id'];
               final bool isSelected = _selectedIds.contains(id);
 
@@ -401,6 +422,45 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSentList() {
+    if (_recordsSent.isEmpty) {
+      return const Center(
+        child: Text(
+          'No hay datos enviados',
+          style: TextStyle(color: Colors.grey, fontSize: 16),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      itemCount: _recordsSent.length,
+      separatorBuilder: (context, index) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final record = _recordsSent[index];
+        return ListTile(
+          leading: const Icon(Icons.file_upload, color: Colors.grey),
+          title: Text(
+            record['nombre_estacion'] ?? 'Estación Desconocida',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(record['fecha_hora'] ?? 'S/F'),
+          trailing: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: const Icon(
+              Icons.check,
+              color: Colors.green,
+              size: 20,
+            ),
+          ),
+        );
+      },
     );
   }
 }

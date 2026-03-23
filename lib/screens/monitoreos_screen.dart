@@ -177,6 +177,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                           final item = _filteredMonitoreos[index];
                           final bool isDraft = item['is_draft'] == 1;
                           final bool isFallido = item['monitoreo_fallido'] == 'true' || item['monitoreo_fallido'] == 1 || item['monitoreo_fallido'] == 'SI';
+                          final bool isSynced = item['sync_status'] == 'success';
                           
                           final String nombrePunto = item['nombre_estacion']?.toString() ?? 'Sin Punto';
                           String fechaMostrada = 'Sin fecha';
@@ -259,14 +260,26 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                           ),
                                           child: const Text('BORRADOR', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
                                         )
-                                      : const Icon(Icons.arrow_forward_ios, size: 16),
+                                      : isSynced 
+                                          ? Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.withOpacity(0.2),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(color: Colors.green),
+                                              ),
+                                              child: const Text('ENVIADO', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                                            )
+                                          : const Icon(Icons.arrow_forward_ios, size: 16),
                                   onTap: () {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) =>
                                             RegistrarMonitoreoScreen(
-                                                registroId: item['id']),
+                                              registroId: item['id'],
+                                              isReadOnly: isSynced,
+                                            ),
                                       ),
                                     ).then((_) => _loadMonitoreos());
                                   },
