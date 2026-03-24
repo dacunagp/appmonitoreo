@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "909933366684",
+    "project_id": "collector-a07bf",
+    "storage_bucket": "collector-a07bf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:909933366684:android:67a0d01443fc1258374c59",
+        "android_client_info": {
+          "package_name": "com.example.monitoreo_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCAhvZS-I4Pj-rKmGuuWk0ewHmB4x6QLI8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
