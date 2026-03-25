@@ -500,7 +500,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
           estacion: _estacionSeleccionada!.name,
           parametro: parameterKey,
           currentInputValue: double.tryParse(controller.text),
-          onValueUpdated: (double newValue) {
+          onValueUpdated: widget.isReadOnly ? null : (double newValue) {
             // 🚨 UPDATE CONTROLLER & TRIGGER DRAFT SAVE
             setState(() {
               controller.text = newValue.toStringAsFixed(2);
@@ -608,12 +608,23 @@ _equipoMultiparametroSeleccionado = eq.codigo;
         children: [
           if (widget.isReadOnly)
             Container(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              color: Colors.green,
-              alignment: Alignment.center,
-              child: const Text(
-                'MODO LECTURA (REGISTRO ENVIADO)',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              color: isDarkMode ? Colors.amber.withAlpha(50) : const Color(0xFFFFF9C4), // Soft yellow
+              child: Row(
+                children: [
+                  Icon(Icons.lock_outline, color: isDarkMode ? Colors.amber : Colors.orange[800], size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Este registro ya fue enviado al servidor y no puede ser modificado.',
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.amber[200] : Colors.orange[900],
+                        fontWeight: FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           // --- SECCIÓN 1: DATOS DE MONITOREO ---
@@ -886,19 +897,33 @@ _equipoMultiparametroSeleccionado = eq.codigo;
           if (!widget.isReadOnly)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-            child: OutlinedButton.icon(
-              onPressed: _isSaving ? null : _guardarMonitoreo,
-              icon: _isSaving 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.save_outlined, color: Colors.blueAccent),
-              label: Text(_isSaving ? 'GUARDANDO...' : 'GUARDAR', style: const TextStyle(color: Colors.blueAccent, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.blueAccent, width: 1.5), 
-                padding: const EdgeInsets.symmetric(vertical: 16.0), 
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+              child: OutlinedButton.icon(
+                onPressed: _isSaving ? null : _guardarMonitoreo,
+                icon: _isSaving 
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.save_outlined, color: Colors.blueAccent),
+                label: Text(_isSaving ? 'GUARDANDO...' : 'GUARDAR', style: const TextStyle(color: Colors.blueAccent, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.blueAccent, width: 1.5), 
+                  padding: const EdgeInsets.symmetric(vertical: 16.0), 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back, color: Colors.grey),
+                label: const Text('VOLVER', style: TextStyle(color: Colors.grey, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.grey, width: 1.5), 
+                  padding: const EdgeInsets.symmetric(vertical: 16.0), 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
+                ),
               ),
             ),
-          ),
           const SizedBox(height: 32),
         ],
       ),
@@ -1991,6 +2016,7 @@ class CustomTextInputRow extends StatelessWidget {
   final TextEditingController controller;
   final bool isMandatory;
   final bool showLeadingIcon;
+  final bool isReadOnly;
 
   const CustomTextInputRow({
     super.key, 
@@ -2001,6 +2027,7 @@ class CustomTextInputRow extends StatelessWidget {
     required this.controller,
     this.isMandatory = true,
     this.showLeadingIcon = true,
+    this.isReadOnly = false,
   });
 
   @override
@@ -2026,6 +2053,7 @@ class CustomTextInputRow extends StatelessWidget {
       ),
       title: Text(label, style: const TextStyle(color: Colors.blueAccent, fontSize: 12)),
       subtitle: TextField(
+        readOnly: isReadOnly,
         controller: controller,
         keyboardType: maxLines == null ? TextInputType.multiline : TextInputType.text, maxLines: maxLines, 
         style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface),

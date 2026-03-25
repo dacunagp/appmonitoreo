@@ -134,26 +134,32 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     try {
       final config = await _dbHelper.getActiveUrlConfig();
       if (config == null) throw Exception('No hay URL configurada activa');
+      debugPrint('═══════════════════════════════════════════════════');
+      debugPrint('🚀 [ENVIAR] Config activa: url=${config['url']}, usuario=${config['usuario']}');
 
       final endpoints = await _dbHelper.getEndpoints();
+      debugPrint('🚀 [ENVIAR] Endpoints disponibles: ${endpoints.map((e) => e['nombre']).toList()}');
       String endpointPath = 'sync/monitoreos'; // Fallback
       
       try {
         final target = endpoints.firstWhere((e) => e['nombre'].toString().contains('sync'));
         endpointPath = target['nombre'];
+        debugPrint('🚀 [ENVIAR] Endpoint encontrado: $endpointPath');
       } catch (_) {
-        await _log('No se encontró endpoint "sync", usando predeterminado.');
+        debugPrint('⚠️ [ENVIAR] No se encontró endpoint "sync", usando predeterminado: $endpointPath');
       }
 
       final Uri syncUrl = Uri.parse(config['url'] + endpointPath);
+      debugPrint('🚀 [ENVIAR] URL completa: $syncUrl');
       List<Map<String, dynamic>> payloadList = [];
 
       final prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString('token') ?? '';
+      debugPrint('🚀 [ENVIAR] Token presente: ${token.isNotEmpty} (longitud: ${token.length})');
 
       for (var record in _recordsPending) {
         if (_selectedIds.contains(record['id'])) {
-          payloadList.add({
+          final item = {
             "id": record['id'],
             "device_id": "MOBILE-DATA",
             "programa_id": record['programa_id'],
@@ -185,11 +191,26 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             "foto_path": await _compressAndEncodeImage(record['foto_path']),
             "foto_multiparametro": await _compressAndEncodeImage(record['foto_multiparametro']),
             "foto_turbiedad": await _compressAndEncodeImage(record['foto_turbiedad']),
+          };
+          debugPrint('───────────────────────────────────────────────────');
+          debugPrint('📦 [ENVIAR] Registro id=${record['id']}:');
+          item.forEach((key, value) {
+            if (key.contains('foto') && value != null) {
+              debugPrint('   $key: [base64 imagen, ${(value as String).length} chars]');
+            } else {
+              debugPrint('   $key: $value');
+            }
           });
+          payloadList.add(item);
         }
       }
 
+      debugPrint('───────────────────────────────────────────────────');
+      debugPrint('🚀 [ENVIAR] Total registros en payload: ${payloadList.length}');
+
       final payload = {"monitoreos": payloadList};
+      final jsonBody = jsonEncode(payload);
+      debugPrint('🚀 [ENVIAR] Tamaño del body JSON: ${jsonBody.length} caracteres');
       
       Map<String, String> headers = {
         'Content-Type': 'application/json',
@@ -198,32 +219,47 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
       if (token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
-        await _log('🔑 Usando Autenticación Bearer Token.');
+        debugPrint('🔑 [ENVIAR] Usando Autenticación Bearer Token.');
       } else {
         final auth = '${config['usuario']}:${config['contrasenia']}';
         headers['Authorization'] = 'Basic ${base64Encode(utf8.encode(auth))}';
-        await _log('🔑 Token vacío. Usando Autenticación Basic como fallback.');
+        debugPrint('🔑 [ENVIAR] Token vacío. Usando Autenticación Basic (user: ${config['usuario']}).');
       }
+
+      debugPrint('🚀 [ENVIAR] Headers: $headers');
+      debugPrint('🚀 [ENVIAR] Enviando POST a $syncUrl ...');
 
       final response = await http.post(
         syncUrl,
         headers: headers,
-        body: jsonEncode(payload),
+        body: jsonBody,
       ).timeout(const Duration(seconds: 30));
+
+      debugPrint('═══════════════════════════════════════════════════');
+      debugPrint('📥 [RESPUESTA] Status Code: ${response.statusCode}');
+      debugPrint('📥 [RESPUESTA] Headers: ${response.headers}');
+      debugPrint('📥 [RESPUESTA] Body: ${response.body}');
+      debugPrint('═══════════════════════════════════════════════════');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         for (int id in _selectedIds) {
           await _dbHelper.updateRegistroMonitoreo(id, {'is_draft': 2}); // 2 = Enviado
         }
+        debugPrint('✅ [ENVIAR] Todos los registros marcados como enviados.');
         if (mounted) {
           Navigator.pop(context); // Cerrar loader
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Datos sincronizados correctamente'), backgroundColor: Colors.green));
           _loadData();
         }
       } else {
-        throw Exception('Error del servidor: ${response.statusCode}');
+        debugPrint('❌ [ENVIAR] Error del servidor: ${response.statusCode} - ${response.body}');
+        throw Exception('Error del servidor: ${response.statusCode} - ${response.body}');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('═══════════════════════════════════════════════════');
+      debugPrint('❌ [ENVIAR] EXCEPCIÓN: $e');
+      debugPrint('❌ [ENVIAR] STACK TRACE: $stackTrace');
+      debugPrint('═══════════════════════════════════════════════════');
       if (mounted) {
         Navigator.pop(context); // Cerrar loader
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error al enviar: $e'), backgroundColor: Colors.red));

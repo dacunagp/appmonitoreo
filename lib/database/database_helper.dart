@@ -510,6 +510,14 @@ class DatabaseHelper {
 
   Future<int> updateRegistroMonitoreo(int id, Map<String, dynamic> data) async {
     final db = await database;
+    
+    // 🛡️ [DEFENSE] Check if record is already synced
+    final existing = await getRegistroMonitoreoById(id);
+    if (existing != null && (existing['is_draft'] == 2 || existing['sync_status'] == 'success')) {
+      await _log('🛡️ [DEFENSE] Bloqueo de actualización: El registro $id ya fue sincronizado.');
+      return 0; // Reject update
+    }
+
     return await db.update('monitoreos', data, where: 'id = ?', whereArgs: [id]);
   }
 
@@ -528,6 +536,15 @@ class DatabaseHelper {
     int monitoreoId = header['id'] ?? 0;
     String estacion = header['estacion_id']?.toString() ?? 'S/N';
     String fecha = header['fecha_hora']?.toString() ?? DateTime.now().toIso8601String();
+
+    // 🛡️ [DEFENSE] Check if record is already synced
+    if (monitoreoId != 0) {
+      final existing = await getRegistroMonitoreoById(monitoreoId);
+      if (existing != null && (existing['is_draft'] == 2 || existing['sync_status'] == 'success')) {
+        await _log('🛡️ [DEFENSE] Bloqueo de transacción: El registro $monitoreoId ya fue sincronizado.');
+        return monitoreoId; // Return current id without changes
+      }
+    }
 
     await db.transaction((txn) async {
       if (monitoreoId == 0) {

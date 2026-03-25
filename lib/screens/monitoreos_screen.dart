@@ -234,7 +234,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                 horizontal: 16, vertical: 6),
                             child: Dismissible(
                               key: Key(item['id'].toString()),
-                              direction: DismissDirection.endToStart,
+                              direction: isSynced ? DismissDirection.none : DismissDirection.endToStart,
                               background: Container(
                                 decoration: BoxDecoration(
                                   color: Colors.redAccent,
