@@ -83,6 +83,13 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuItem(
                   context,
+                  title: 'Notificaciones',
+                  icon: Icons.notifications_outlined,
+                  targetRoute: '/notificaciones',
+                  isDarkMode: isDarkMode,
+                ),
+                _buildMenuItem(
+                  context,
                   title: 'Info',
                   icon: Icons.info_outline,
                   targetRoute: '/info',

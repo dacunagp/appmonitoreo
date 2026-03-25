@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -57,7 +58,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 7, // 🚀 BUMP A VERSIÓN 7
+      version: 8, // 🚀 BUMP A VERSIÓN 8
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -89,6 +90,24 @@ class DatabaseHelper {
         }
       } catch (e) {
         await _log('⚠️ [UPGRADE] Error agregando endpoint por defecto: $e');
+      }
+    }
+
+    if (oldVersion < 8) {
+      try {
+        await _log('🚀 [UPGRADE] Creando tabla notificaciones...');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS notificaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo TEXT,
+            mensaje TEXT,
+            payload TEXT,
+            fecha TEXT
+          )
+        ''');
+        await _log('✅ [UPGRADE] Tabla notificaciones creada exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error creando tabla notificaciones: $e');
       }
     }
   }
@@ -281,6 +300,17 @@ class DatabaseHelper {
     for (String ep in defaultEndpoints) {
       await db.insert('endpoints', {'nombre': ep});
     }
+
+    // 7. Notificaciones Push
+    await db.execute('''
+      CREATE TABLE notificaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        titulo TEXT,
+        mensaje TEXT,
+        payload TEXT,
+        fecha TEXT
+      )
+    ''');
 
     await _log('✅ [SCHEMA] Tablas construidas con éxito.');
   }
@@ -961,5 +991,57 @@ class DatabaseHelper {
       await _log('   Traza: $stacktrace');
       rethrow;
     }
+  }
+
+  // ─── NOTIFICACIONES PUSH ──────────────────────────────────────────────────
+
+  // Controlador de stream para reactividad en la UI (broadcast para múltiples listeners)
+  final StreamController<List<Map<String, dynamic>>> _notificacionesController = 
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+
+  /// Stream para escuchar los cambios en notificaciones.
+  Stream<List<Map<String, dynamic>>> get notificacionesStream => _notificacionesController.stream;
+
+  /// Método privado para emitir el último estado de la tabla de notificaciones conectada al Stream.
+  Future<void> _notificarCambios() async {
+    final data = await obtenerNotificaciones();
+    if (!_notificacionesController.isClosed) {
+      _notificacionesController.add(data);
+    }
+  }
+
+  /// Cierra el stream (generalmente no se llama porque DatabaseHelper es Singleton durante la vida de la app).
+  void dispose() {
+    _notificacionesController.close();
+  }
+
+  /// Inserta una notificación recibida en la base de datos local y notifica a los listeners.
+  Future<int> insertarNotificacion(Map<String, dynamic> data) async {
+    final db = await database;
+    final id = await db.insert('notificaciones', data);
+    await _notificarCambios();
+    return id;
+  }
+
+  /// Retorna todas las notificaciones ordenadas por fecha descendente.
+  Future<List<Map<String, dynamic>>> obtenerNotificaciones() async {
+    final db = await database;
+    return await db.query('notificaciones', orderBy: 'fecha DESC');
+  }
+
+  /// Elimina una notificación por su ID y notifica a los listeners.
+  Future<int> deleteNotificacion(int id) async {
+    final db = await database;
+    final count = await db.delete('notificaciones', where: 'id = ?', whereArgs: [id]);
+    await _notificarCambios();
+    return count;
+  }
+
+  /// Elimina todas las notificaciones y notifica a los listeners.
+  Future<int> deleteAllNotificaciones() async {
+    final db = await database;
+    final count = await db.delete('notificaciones');
+    await _notificarCambios();
+    return count;
   }
 }

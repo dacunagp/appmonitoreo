@@ -27,6 +27,7 @@ import 'screens/administracion_screen.dart';
 import 'screens/exportar_bd_screen.dart';
 import 'screens/api_config_screen.dart';
 import 'screens/security_lock_screen.dart';
+import 'screens/notificaciones_screen.dart';
 
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
@@ -137,6 +138,29 @@ String? _encodeImage(String? path) {
   return base64Encode(file.readAsBytesSync());
 }
 
+Future<void> _guardarNotificacionLocal(OSNotification notification) async {
+  final String titulo = notification.title ?? 'Sin título';
+  final String mensaje = notification.body ?? '';
+  final Map<String, dynamic>? additionalData = notification.additionalData;
+  
+  String payloadJson = '';
+  if (additionalData != null && additionalData.isNotEmpty) {
+    payloadJson = jsonEncode(additionalData);
+  }
+  
+  try {
+    await DatabaseHelper().insertarNotificacion({
+      'titulo': titulo,
+      'mensaje': mensaje,
+      'payload': payloadJson,
+      'fecha': DateTime.now().toIso8601String(),
+    });
+    debugPrint('✅ [OneSignal] Notificación guardada en BD local desde ${notification.title}.');
+  } catch (e) {
+    debugPrint('🚨 [OneSignal] Error al guardar notificación: $e');
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -145,13 +169,15 @@ void main() async {
   OneSignal.initialize("8123fc88-aea9-4d85-9a36-8be4248fd004");
   OneSignal.Notifications.requestPermission(true);
 
-  OneSignal.Notifications.addForegroundWillDisplayListener((event) {
+  OneSignal.Notifications.addForegroundWillDisplayListener((event) async {
     debugPrint('🔔 [OneSignal] Notificación recibida en primer plano: ${event.notification.title}');
+    await _guardarNotificacionLocal(event.notification);
     event.notification.display();
   });
 
-  OneSignal.Notifications.addClickListener((event) {
+  OneSignal.Notifications.addClickListener((event) async {
     debugPrint('👆 [OneSignal] Notificación tocada: ${event.notification.title}');
+    await _guardarNotificacionLocal(event.notification);
   });
   
   Workmanager().initialize(
@@ -211,6 +237,7 @@ class MonitoreoApp extends StatelessWidget {
         '/exportar_bd': (context) => const ExportarBDScreen(),
         '/api_config': (context) => const ApiConfigScreen(),
         '/security_lock': (context) => const SecurityLockScreen(),
+        '/notificaciones': (context) => const NotificacionesScreen(),
       },
     );
   }
