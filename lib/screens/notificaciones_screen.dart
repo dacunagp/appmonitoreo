@@ -49,34 +49,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
     }
   }
 
-  Future<void> _eliminarNotificacion(int id) async {
-    await _dbHelper.deleteNotificacion(id); // esto ya triggerea el stream
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notificación eliminada'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    }
-  }
 
-  Future<void> _eliminarTodas() async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar'),
-        content: const Text('¿Eliminar todas las notificaciones?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
-        ],
-      ),
-    );
-    if (confirmar == true) {
-      await _dbHelper.deleteAllNotificaciones(); // esto triggerea el stream
-    }
-  }
 
   /// Intenta parsear el JSON de payload y lo muestra como chips.
   Map<String, dynamic>? _parsePayload(String? raw) {
@@ -103,14 +76,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Notificaciones'),
-          actions: [
-            if (_notificaciones.isNotEmpty)
-              IconButton(
-                icon: const Icon(Icons.delete_sweep),
-                tooltip: 'Eliminar todas',
-                onPressed: _eliminarTodas,
-              ),
-          ],
+          actions: const [],
         ),
         drawer: const AppDrawer(currentRoute: '/notificaciones'),
         body: _isLoading
@@ -180,21 +146,7 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
           '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {}
 
-    return Dismissible(
-      key: ValueKey(notif['id']),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.redAccent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(Icons.delete_outline, color: Colors.white),
-      ),
-      onDismissed: (_) => _eliminarNotificacion(notif['id'] as int),
-      child: Card(
+    return Card(
         margin: const EdgeInsets.symmetric(vertical: 4),
         elevation: isDarkMode ? 0 : 2,
         color: isDarkMode ? const Color(0xFF2A2A2A) : Colors.white,
@@ -279,7 +231,6 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 }
