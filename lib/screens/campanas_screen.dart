@@ -28,7 +28,12 @@ class _CampanasScreenState extends State<CampanasScreen> {
   bool _isLoading = true;
   Map<int, int> _stationStatuses = {};
   String? _cachePath;
-  String _currentLayerUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  String? _selectedLayerUrl;
+
+  String get _currentLayerUrl {
+    if (_selectedLayerUrl != null) return _selectedLayerUrl!;
+    return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  }
 
   @override
   void initState() {
@@ -121,58 +126,70 @@ class _CampanasScreenState extends State<CampanasScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.blue, size: 30),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    station.name,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+      builder: (context) {
+        final theme = Theme.of(context);
+        final isDarkMode = theme.brightness == Brightness.dark;
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.location_on, color: isDarkMode ? theme.colorScheme.primary : Colors.blue, size: 30),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      station.name,
+                      style: TextStyle(
+                        fontSize: 22, 
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 32),
+              _buildDetailRow(Icons.map, 'Coordenadas', '${station.latitude}, ${station.longitude}'),
+              const SizedBox(height: 16),
+              const Text(
+                'Detalles de la Estación:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Esta estación forma parte del programa de monitoreo seleccionado. '
+                'Toque el botón inferior para ver el historial de esta estación.',
+                style: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[700]),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    // Navegación desactivada por requerimiento
+                    debugPrint('Navegación bloqueada para: ${station.name}');
+                  },
+                  icon: const Icon(Icons.history),
+                  label: const Text('VER HISTORIAL COMPLETO'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.colorScheme.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-              ],
-            ),
-            const Divider(height: 32),
-            _buildDetailRow(Icons.map, 'Coordenadas', '${station.latitude}, ${station.longitude}'),
-            const SizedBox(height: 16),
-            const Text(
-              'Detalles de la Estación:',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Esta estación forma parte del programa de monitoreo seleccionado. '
-              'Toque el botón inferior para ver el historial de esta estación.',
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                   // Navegación desactivada por requerimiento
-                   debugPrint('Navegación bloqueada para: ${station.name}');
-                },
-                icon: const Icon(Icons.history),
-                label: const Text('VER HISTORIAL COMPLETO'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -195,6 +212,9 @@ class _CampanasScreenState extends State<CampanasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+
     return PopScope(
       canPop: false,
       onPopInvoked: (bool didPop) {
@@ -209,9 +229,16 @@ class _CampanasScreenState extends State<CampanasScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Campañas', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.blue[800],
-          iconTheme: const IconThemeData(color: Colors.white),
+          title: Text(
+            'Campañas', 
+            style: TextStyle(
+              color: isDarkMode ? Colors.white : Colors.black87, 
+              fontWeight: FontWeight.bold
+            )
+          ),
+          backgroundColor: isDarkMode ? theme.colorScheme.surface : theme.primaryColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: isDarkMode ? Colors.white : Colors.black87),
         ),
         drawer: const AppDrawer(currentRoute: '/campanas'),
         body: Stack(
@@ -220,7 +247,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
             FlutterMap(
               mapController: _mapController,
               options: const MapOptions(
-                initialCenter: const LatLng(-33.4489, -70.6693), // Fíjate en el "const"
+                initialCenter: LatLng(-33.4489, -70.6693),
                 initialZoom: 12,
               ),
               children: [
@@ -232,7 +259,6 @@ class _CampanasScreenState extends State<CampanasScreen> {
                         store: FileCacheStore(_cachePath!),
                       )
                     : null,
-                  // Mejora de diagnóstico
                   errorTileCallback: (tile, error, stackTrace) {
                     debugPrint('❌ Error cargando tile: $error');
                   },
@@ -301,11 +327,10 @@ class _CampanasScreenState extends State<CampanasScreen> {
               left: 0,
               right: 0,
               child: Container(
-                color: Colors.black.withOpacity(0.85),
+                color: isDarkMode ? theme.colorScheme.surface.withOpacity(0.9) : Colors.black.withOpacity(0.85),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
-                    // PROGRAMA
                     Expanded(
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
@@ -329,7 +354,6 @@ class _CampanasScreenState extends State<CampanasScreen> {
                       ),
                     ),
                     const VerticalDivider(color: Colors.white30, width: 20),
-                    // SELECCIONE (ESTACIÓN)
                     Expanded(
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
@@ -351,11 +375,9 @@ class _CampanasScreenState extends State<CampanasScreen> {
               ),
             ),
 
-            // LOADING INDICATOR
             if (_isLoading)
               const Center(child: CircularProgressIndicator(color: Colors.white)),
 
-            // BOTONES DE ZOOM (Bottom Left)
             Positioned(
               bottom: 20,
               left: 20,
@@ -374,7 +396,6 @@ class _CampanasScreenState extends State<CampanasScreen> {
               ),
             ),
 
-            // BOTÓN DE CAPAS (Top Right - Below Filter)
             Positioned(
               top: 70,
               right: 20,
@@ -386,23 +407,23 @@ class _CampanasScreenState extends State<CampanasScreen> {
                 ),
                 child: PopupMenuButton<String>(
                   onSelected: (String url) {
-                    setState(() => _currentLayerUrl = url);
+                    setState(() => _selectedLayerUrl = url);
                   },
                   offset: const Offset(0, 45),
                   elevation: 4,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  color: Colors.white,
+                  color: isDarkMode ? theme.colorScheme.surface : Colors.white,
                   padding: EdgeInsets.zero,
                   tooltip: 'Cambiar Capa',
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                    _buildLayerMenuItem('Mapa', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                    _buildLayerMenuItem('Estándar', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
                     const PopupMenuDivider(height: 1),
                     _buildLayerMenuItem('Carreteras', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'),
                     const PopupMenuDivider(height: 1),
                     _buildLayerMenuItem('Satélite', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'),
                   ],
                   child: _buildMapActionButton(
-                    onPressed: null, // El PopupMenuButton maneja el tap
+                    onPressed: null,
                     icon: Icons.layers,
                   ),
                 ),
@@ -415,15 +436,17 @@ class _CampanasScreenState extends State<CampanasScreen> {
   }
 
   Widget _buildMapActionButton({required VoidCallback? onPressed, required IconData icon}) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: isDarkMode ? theme.colorScheme.surface.withOpacity(0.9) : Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(8),
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
       ),
       child: IconButton(
         onPressed: onPressed,
-        icon: Icon(icon, color: Colors.blue[800]),
+        icon: Icon(icon, color: isDarkMode ? Colors.white : Colors.blue[800]),
         constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         padding: EdgeInsets.zero,
       ),
@@ -432,6 +455,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
 
   PopupMenuItem<String> _buildLayerMenuItem(String title, String url) {
     final isSelected = _currentLayerUrl == url;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return PopupMenuItem<String>(
       value: url,
       child: Row(
@@ -443,7 +467,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
-                color: isSelected ? Colors.blue : Colors.grey.shade400,
+                color: isSelected ? (isDarkMode ? Colors.blueAccent : Colors.blue) : Colors.grey.shade400,
                 width: isSelected ? 4 : 8,
               ),
               color: isSelected ? Colors.white : Colors.grey.shade600,
@@ -453,7 +477,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
           Text(
             title,
             style: TextStyle(
-              color: Colors.grey.shade700,
+              color: isDarkMode ? Colors.white : Colors.grey.shade700,
               fontSize: 14,
               fontWeight: FontWeight.w400,
             ),

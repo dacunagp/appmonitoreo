@@ -384,13 +384,26 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
                               !program.name.toLowerCase().contains(_searchProgramaController.text.toLowerCase())) {
                             return Container();
                           }
+                          final isSelected = _selectedProgram == program;
                           return ListTile(
                             onTap: () => _onProgramChanged(program),
+                            selected: isSelected,
+                            selectedTileColor: theme.brightness == Brightness.dark
+                                ? Colors.blueGrey[800]
+                                : Colors.grey[200],
                             leading: Icon(
-                              _selectedProgram == program ? Icons.check_circle : Icons.circle_outlined,
-                              color: theme.primaryColor,
+                              isSelected ? Icons.check_circle : Icons.circle_outlined,
+                              color: isSelected ? theme.primaryColor : (theme.brightness == Brightness.dark ? Colors.white54 : Colors.grey),
                             ),
-                            title: Text(program.name),
+                            title: Text(
+                              program.name,
+                              style: TextStyle(
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected 
+                                    ? (theme.brightness == Brightness.dark ? Colors.white : theme.primaryColor)
+                                    : null,
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -444,11 +457,23 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
                                 }
                               });
                             },
+                            selected: isSelected,
+                            selectedTileColor: theme.brightness == Brightness.dark
+                                ? Colors.blueGrey[800]
+                                : Colors.grey[200],
                             leading: Icon(
                               isSelected ? Icons.check_box : Icons.check_box_outline_blank,
-                              color: theme.primaryColor,
+                              color: isSelected ? theme.primaryColor : (theme.brightness == Brightness.dark ? Colors.white54 : Colors.grey),
                             ),
-                            title: Text(station.name),
+                            title: Text(
+                              station.name,
+                              style: TextStyle(
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: isSelected 
+                                    ? (theme.brightness == Brightness.dark ? Colors.white : theme.primaryColor)
+                                    : null,
+                              ),
+                            ),
                           );
                         },
                       ),
