@@ -18,7 +18,7 @@ class AppDrawer extends StatelessWidget {
           const SizedBox(height: 50),
           Center(
             child: Text(
-              'Opciones',
+              'Menú',
               style: TextStyle(
                 color: isDarkMode ? Colors.white : const Color(0xFF212121),
                 fontSize: 22,

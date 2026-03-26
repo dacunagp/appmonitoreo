@@ -289,35 +289,44 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                       ),
                                     ],
                                   ),
-                                  trailing: draftStatus == 1
-                                      ? Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.withOpacity(0.2),
-                                            borderRadius: BorderRadius.circular(12),
-                                            border: Border.all(color: Colors.grey),
-                                          ),
-                                          child: const Text('BORRADOR', style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
-                                        )
-                                      : draftStatus == 0
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (isFallido) ...[
+                                        const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      draftStatus == 1
                                           ? Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
-                                                color: Colors.orange.withOpacity(0.2),
+                                                color: Colors.grey.withOpacity(0.2),
                                                 borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(color: Colors.orange),
+                                                border: Border.all(color: Colors.grey),
                                               ),
-                                              child: const Text('PENDIENTE', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                              child: const Text('BORRADOR', style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
                                             )
-                                          : Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.green.withOpacity(0.2),
-                                                borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(color: Colors.green),
-                                              ),
-                                              child: const Text('ENVIADO', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
-                                            ),
+                                          : draftStatus == 0
+                                              ? Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.orange.withOpacity(0.2),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(color: Colors.orange),
+                                                  ),
+                                                  child: const Text('PENDIENTE', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                )
+                                              : Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.green.withOpacity(0.2),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(color: Colors.green),
+                                                  ),
+                                                  child: const Text('ENVIADO', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                ),
+                                    ],
+                                  ),
                                   onTap: () {
                                     Navigator.push(
                                       context,
