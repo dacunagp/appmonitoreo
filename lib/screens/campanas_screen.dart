@@ -44,13 +44,16 @@ class _CampanasScreenState extends State<CampanasScreen> {
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
     try {
+      debugPrint('🗺️ [Inicio] Cargando datos iniciales...');
       final programs = await _dbHelper.getPrograms();
       final stations = await _dbHelper.getAllStations();
+      debugPrint('🗺️ [Inicio] ${programs.length} programas y ${stations.length} estaciones encontradas.');
       
       // Initialize Cache Path for Offline Maps
       final cacheDir = await getApplicationDocumentsDirectory();
       
       // Fetch Sync Statuses
+      debugPrint('🗺️ [Inicio] Obteniendo estados de sincronización...');
       final Map<int, int> statuses = {};
       for (var s in stations) {
         statuses[s.id] = await _dbHelper.getStationSyncStatus(s.id);
@@ -64,13 +67,15 @@ class _CampanasScreenState extends State<CampanasScreen> {
         _cachePath = '${cacheDir.path}/map_tiles_cache';
         _isLoading = false;
       });
+      debugPrint('🗺️ [Inicio] Carga completa. Listos para mostrar el mapa.');
     } catch (e) {
-      debugPrint('Error loading initial data: $e');
+      debugPrint('🛑 [ERROR Inicio]: $e');
       setState(() => _isLoading = false);
     }
   }
 
   void _onProgramChanged(int? programId) async {
+    debugPrint('🔍 [Cambio Programa] ID: $programId Seleccionado.');
     setState(() {
       _selectedProgramId = programId;
       _selectedStationId = null;
@@ -79,13 +84,17 @@ class _CampanasScreenState extends State<CampanasScreen> {
     
     try {
       if (programId == null) {
+        debugPrint('🔍 [Cambio Programa] Regresando a "Todos los Programas".');
         final stations = await _dbHelper.getAllStations();
         setState(() {
           _filteredStations = stations;
           _isLoading = false;
         });
       } else {
+        debugPrint('🔍 [Cambio Programa] Buscando estaciones para programa ID: $programId');
         final stations = await _dbHelper.getStationsByProgram(programId);
+        debugPrint('🔍 [Cambio Programa] ${stations.length} estaciones encontradas.');
+        
         final Map<int, int> statuses = {};
         for (var s in stations) {
           statuses[s.id] = await _dbHelper.getStationSyncStatus(s.id);
@@ -97,22 +106,26 @@ class _CampanasScreenState extends State<CampanasScreen> {
         });
 
         if (stations.isNotEmpty) {
-          _mapController.move(
-            LatLng(stations[0].latitude, stations[0].longitude),
-            12,
-          );
+          final lat = stations[0].latitude;
+          final lon = stations[0].longitude;
+          debugPrint('📍 [Cambio Programa] Moviendo mapa a primer estación: ${stations[0].name} ($lat, $lon)');
+          _mapController.move(LatLng(lat, lon), 12);
+        } else {
+          debugPrint('⚠️ [Cambio Programa] El programa no tiene estaciones con coordenadas.');
         }
       }
     } catch (e) {
-      debugPrint('Error changing program: $e');
+      debugPrint('🛑 [ERROR Cambio Programa]: $e');
       setState(() => _isLoading = false);
     }
   }
 
   void _onStationChanged(int? stationId) {
+    debugPrint('📌 [Selección Estación] ID: $stationId enfocando...');
     setState(() => _selectedStationId = stationId);
     if (stationId != null) {
       final station = _allStations.firstWhere((s) => s.id == stationId);
+      debugPrint('📌 [Selección Estación] Moviendo a ${station.name} (${station.latitude}, ${station.longitude})');
       _mapController.move(
         LatLng(station.latitude, station.longitude),
         15,
@@ -229,16 +242,16 @@ class _CampanasScreenState extends State<CampanasScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(
+          title: const Text(
             'Campañas', 
             style: TextStyle(
-              color: isDarkMode ? Colors.white : Colors.black87, 
+              color: Colors.white, 
               fontWeight: FontWeight.bold
             )
           ),
           backgroundColor: isDarkMode ? theme.colorScheme.surface : theme.primaryColor,
           elevation: 0,
-          iconTheme: IconThemeData(color: isDarkMode ? Colors.white : Colors.black87),
+          iconTheme: const IconThemeData(color: Colors.white),
         ),
         drawer: const AppDrawer(currentRoute: '/campanas'),
         body: Stack(
@@ -246,21 +259,21 @@ class _CampanasScreenState extends State<CampanasScreen> {
             // MAPA
             FlutterMap(
               mapController: _mapController,
-              options: const MapOptions(
-                initialCenter: LatLng(-33.4489, -70.6693),
+              options: MapOptions(
+                initialCenter: const LatLng(-33.4489, -70.6693),
                 initialZoom: 12,
+                onMapReady: () {
+                  debugPrint('🆗 [MAPA] El controlador está listo y el mapa es interactivo.');
+                },
               ),
               children: [
                 TileLayer(
                   urlTemplate: _currentLayerUrl,
-                  userAgentPackageName: 'com.example.monitoreo_app',
-                  tileProvider: _cachePath != null 
-                    ? CachedTileProvider(
-                        store: FileCacheStore(_cachePath!),
-                      )
-                    : null,
+                  userAgentPackageName: 'monitoreo_app.skelletor.monitoring',
+                  tileDisplay: const TileDisplay.fadeIn(),
+                  // Mejora de diagnóstico
                   errorTileCallback: (tile, error, stackTrace) {
-                    debugPrint('❌ Error cargando tile: $error');
+                    debugPrint('❌ [MAPA] Error cargando tile en ${_currentLayerUrl}: $error');
                   },
                 ),
                 MarkerLayer(
@@ -342,11 +355,17 @@ class _CampanasScreenState extends State<CampanasScreen> {
                           items: [
                             const DropdownMenuItem<int>(
                               value: null,
-                              child: Text('Todos los Programas'),
+                              child: Text(
+                                'Todos los Programas',
+                                style: TextStyle(color: Colors.white),
+                              ),
                             ),
                             ..._programs.map((p) => DropdownMenuItem<int>(
                                   value: p.id,
-                                  child: Text(p.name),
+                                  child: Text(
+                                    p.name,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
                                 )),
                           ],
                           onChanged: _onProgramChanged,
@@ -364,7 +383,11 @@ class _CampanasScreenState extends State<CampanasScreen> {
                           style: const TextStyle(color: Colors.white, fontSize: 13),
                           items: _filteredStations.map((s) => DropdownMenuItem<int>(
                                 value: s.id,
-                                child: Text(s.name, overflow: TextOverflow.ellipsis),
+                                child: Text(
+                                  s.name, 
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
                               )).toList(),
                           onChanged: _onStationChanged,
                         ),

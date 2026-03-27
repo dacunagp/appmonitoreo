@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 
@@ -91,8 +93,23 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     final file = File(path);
     if (!await file.exists()) return null;
     try {
-      final bytes = await file.readAsBytes();
-      return 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      // 🚨 COMPRESS BEFORE ENCODING TO BASE64
+      final Uint8List? compressedBytes = await FlutterImageCompress.compressWithFile(
+        path,
+        minWidth: 800,
+        minHeight: 800,
+        quality: 70,
+      );
+
+      if (compressedBytes != null) {
+        debugPrint('✅ Imagen comprimida para payload: ${(compressedBytes.length / 1024).toStringAsFixed(2)} KB');
+        return 'data:image/jpeg;base64,${base64Encode(compressedBytes)}';
+      } else {
+        // Fallback to original bytes if compression fails
+        final bytes = await file.readAsBytes();
+        debugPrint('⚠️ Falló compresión para payload, usando original: ${(bytes.length / 1024).toStringAsFixed(2)} KB');
+        return 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      }
     } catch (e) {
       await _log('Error comprimiendo imagen: $e');
       return null;

@@ -14,6 +14,7 @@ import '../models/models.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import 'dart:async';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'chart_analysis_screen.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
@@ -1417,8 +1418,22 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       final String fileName = 'EVIDENCIA_TECNICA_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final String filePath = p.join(directory.path, fileName);
       
+      // 🚨 COMPRESS IMAGE BEFORE SAVING TO DISK
+      final Uint8List? compressedBytes = await FlutterImageCompress.compressWithList(
+        stampedBytes,
+        minWidth: 800,
+        minHeight: 800,
+        quality: 70,
+      );
+
       final File processedFile = File(filePath);
-      await processedFile.writeAsBytes(stampedBytes);
+      if (compressedBytes != null) {
+        await processedFile.writeAsBytes(compressedBytes);
+        debugPrint('✅ Imagen comprimida guardada: ${(compressedBytes.length / 1024).toStringAsFixed(2)} KB');
+      } else {
+        await processedFile.writeAsBytes(stampedBytes);
+        debugPrint('⚠️ Falló compresión, guardando original: ${(stampedBytes.length / 1024).toStringAsFixed(2)} KB');
+      }
 
       setState(() {
         if (target == 'general') _imagePath = filePath;
@@ -1440,8 +1455,24 @@ _equipoMultiparametroSeleccionado = eq.codigo;
     }
   }
 
-  void _removeImage() {
+  Future<void> _removeImage() async {
     setState(() => _imagePath = null);
+  }
+
+  // --- COMPRESSION UTILITY ---
+  Future<Uint8List?> _compressImage(String targetPath) async {
+    try {
+      final result = await FlutterImageCompress.compressWithFile(
+        targetPath,
+        minWidth: 800,
+        minHeight: 800,
+        quality: 70,
+      );
+      return result;
+    } catch (e) {
+      debugPrint('Error comprimiendo archivo: $e');
+      return null;
+    }
   }
 
   Future<void> _sharePhoto(String path) async {

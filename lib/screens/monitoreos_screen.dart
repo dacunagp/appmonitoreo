@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 import 'registrar_monitoreo_screen.dart';
@@ -352,11 +353,17 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   }
 
   Future<void> _confirmarEliminarTodo(BuildContext context) async {
+    // 1. PIN Verification
+    final bool pinCorrecto = await _verifyDeletionPin();
+    if (!pinCorrecto) return;
+
+    // 2. Standard Final Confirmation
+    if (!mounted) return;
     final bool? confirmar = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Eliminar Todos los Registros',
-            style: TextStyle(color: Colors.red)),
+        title: const Text('Confirmar Eliminación Masiva',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
         content: const Text(
             '¿Está seguro de que desea eliminar TODOS los monitoreos guardados localmente? Esta acción no se puede deshacer.'),
         actions: [
@@ -365,9 +372,10 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
             child: const Text('CANCELAR',
                 style: TextStyle(color: Colors.blueAccent)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('ELIMINAR', style: TextStyle(color: Colors.red)),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('ELIMINAR TODO', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -385,6 +393,64 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
         _loadMonitoreos();
       }
     }
+  }
+
+  Future<bool> _verifyDeletionPin() async {
+    final TextEditingController pinController = TextEditingController();
+    final prefs = await SharedPreferences.getInstance();
+    final String correctPin = prefs.getString('deletion_pin') ?? '1234';
+
+    final bool? result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.lock_person, color: Colors.orange),
+            SizedBox(width: 10),
+            Text('PIN de Seguridad'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Esta acción requiere autorización. Ingrese el PIN de borrado para continuar:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'PIN de Borrado',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCELAR'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (pinController.text == correctPin) {
+                Navigator.pop(context, true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('PIN incorrecto'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            child: const Text('VERIFICAR'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
   }
 
   Future<void> _exportToCsvAndShare() async {

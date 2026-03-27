@@ -7,6 +7,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:flutter/services.dart'; // For rootBundle if needed, though not here
 
 import 'theme/app_theme.dart';
 import 'theme/theme_provider.dart';
@@ -90,10 +92,9 @@ void callbackDispatcher() {
           "profundidad": record['profundidad'],
           "nivel": record['nivel'],
           "latitud": record['latitud'],
-          "longitud": record['longitud'],
-          "foto_path": _encodeImage(record['foto_path']),
-          "foto_multiparametro": _encodeImage(record['foto_multiparametro']),
-          "foto_turbiedad": _encodeImage(record['foto_turbiedad']),
+          "foto_path": await _encodeImage(record['foto_path']),
+          "foto_multiparametro": await _encodeImage(record['foto_multiparametro']),
+          "foto_turbiedad": await _encodeImage(record['foto_turbiedad']),
         });
       }
 
@@ -131,11 +132,27 @@ void callbackDispatcher() {
   });
 }
 
-String? _encodeImage(String? path) {
+Future<String?> _encodeImage(String? path) async {
   if (path == null || path.isEmpty) return null;
   final file = File(path);
   if (!file.existsSync()) return null;
-  return base64Encode(file.readAsBytesSync());
+  try {
+    // 🚨 COMPRESS BEFORE ENCODING TO BASE64 (Background task)
+    final Uint8List? compressedBytes = await FlutterImageCompress.compressWithFile(
+      path,
+      minWidth: 800,
+      minHeight: 800,
+      quality: 70,
+    );
+    if (compressedBytes != null) {
+      return base64Encode(compressedBytes);
+    } else {
+      return base64Encode(file.readAsBytesSync());
+    }
+  } catch (e) {
+    debugPrint('Error en sync background comprimiendo: $e');
+    return base64Encode(file.readAsBytesSync());
+  }
 }
 
 Future<void> _guardarNotificacionLocal(OSNotification notification) async {

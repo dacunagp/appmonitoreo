@@ -77,8 +77,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: _toggleAutoSync,
               ),
             ),
+            const SizedBox(height: 8),
+            // Deletion PIN Section
+            Card(
+              child: ListTile(
+                title: const Text('Cambiar PIN de borrado'),
+                subtitle: const Text('Configurar código para eliminar registros'),
+                leading: const Icon(Icons.lock_outline),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: _showChangePinDialog,
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _showChangePinDialog() async {
+    final TextEditingController pinController = TextEditingController();
+    return showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nuevo PIN de borrado'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ingresa un nuevo PIN de 4 dígitos para autorizar la eliminación de registros.', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Nuevo PIN',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.pin),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCELAR'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final newPin = pinController.text.trim();
+              if (newPin.length != 4 || int.tryParse(newPin) == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('El PIN debe tener exactamente 4 dígitos numéricos'), backgroundColor: Colors.red),
+                );
+                return;
+              }
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('deletion_pin', newPin);
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('✅ PIN de borrado actualizado correctamente'), backgroundColor: Colors.green),
+                );
+              }
+            },
+            child: const Text('GUARDAR'),
+          ),
+        ],
       ),
     );
   }
