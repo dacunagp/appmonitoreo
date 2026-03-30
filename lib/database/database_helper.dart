@@ -58,7 +58,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 8, // 🚀 BUMP A VERSIÓN 8
+      version: 9, // 🚀 BUMP A VERSIÓN 9
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -110,6 +110,18 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE] Error creando tabla notificaciones: $e');
       }
     }
+    if (oldVersion < 9) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando endpoint por defecto "muestras"...');
+        var res = await db.rawQuery("SELECT id FROM endpoints WHERE nombre = ?", ['muestras']);
+        if (res.isEmpty) {
+          await db.insert('endpoints', {'nombre': 'muestras'});
+          await _log('✅ [UPGRADE] Endpoint "muestras" agregado exitosamente.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando endpoint "muestras": $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -157,7 +169,7 @@ class DatabaseHelper {
           nombre TEXT NOT NULL
         )
       ''');
-      final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos'];
+      final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos', 'muestras'];
       for (String ep in defaultEndpoints) {
         await db.insert('endpoints', {'nombre': ep});
       }
@@ -296,7 +308,7 @@ class DatabaseHelper {
       )
     ''');
 
-    final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos'];
+    final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos', 'muestras'];
     for (String ep in defaultEndpoints) {
       await db.insert('endpoints', {'nombre': ep});
     }

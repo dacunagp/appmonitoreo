@@ -83,11 +83,20 @@ class ApiService {
     final auth = '${config['usuario']}:${config['contrasenia']}';
     final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
     
-    // For muestras, we replace the endpoint part or append to it. 
-    // Assuming baseUrl ends with 'endpoint='
+    final endpointData = await _dbHelper.getEndpoints();
+    String endpointName = 'muestras'; // Fallback
+    try {
+      final target = endpointData.firstWhere(
+        (e) => e['nombre'].toString().toLowerCase().contains('muestra') || 
+               e['nombre'].toString().toLowerCase().contains('historial'),
+        orElse: () => {'nombre': 'muestras'}
+      );
+      endpointName = target['nombre'];
+    } catch (_) {}
+
     final fullUrl = baseUrl.contains('endpoint=') 
-        ? baseUrl.replaceAll('endpoint=', 'endpoint=muestras')
-        : '${baseUrl}muestras';
+        ? baseUrl.replaceAll('endpoint=', 'endpoint=$endpointName')
+        : '$baseUrl$endpointName';
 
     try {
       final response = await http.post(

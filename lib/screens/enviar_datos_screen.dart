@@ -103,12 +103,12 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
       if (compressedBytes != null) {
         debugPrint('✅ Imagen comprimida para payload: ${(compressedBytes.length / 1024).toStringAsFixed(2)} KB');
-        return 'data:image/jpeg;base64,${base64Encode(compressedBytes)}';
+        return base64Encode(compressedBytes);
       } else {
         // Fallback to original bytes if compression fails
         final bytes = await file.readAsBytes();
         debugPrint('⚠️ Falló compresión para payload, usando original: ${(bytes.length / 1024).toStringAsFixed(2)} KB');
-        return 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        return base64Encode(bytes);
       }
     } catch (e) {
       await _log('Error comprimiendo imagen: $e');
@@ -122,112 +122,62 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       return;
     }
 
-    // 1. Mostrar Loader Estático
+    final int totalEnvios = _selectedIds.length;
+    int enviosCompletados = 0;
+    int enviosExitosos = 0;
+    List<String> syncErrors = [];
+    StateSetter? dialogSetState;
+
+    // 1. Mostrar Loader Dinámico con StatefulBuilder
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                CircularProgressIndicator(color: Colors.blue),
-                SizedBox(height: 20),
-                Text(
-                  'Sincronizando monitoreos con el servidor...',
-                  style: TextStyle(color: Colors.blue, fontSize: 16, fontWeight: FontWeight.w500),
-                  textAlign: TextAlign.center,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            dialogSetState = setState;
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.blue),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Enviando ${enviosCompletados + 1 > totalEnvios ? totalEnvios : enviosCompletados + 1} de $totalEnvios...',
+                      style: const TextStyle(color: Colors.blue, fontSize: 16, fontWeight: FontWeight.w500),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
 
+    final Stopwatch cronometroTotal = Stopwatch()..start();
+    final Stopwatch cronometroRed = Stopwatch();
+    debugPrint('⏱️ [TIEMPOS] Iniciando proceso de envío secuencial para $totalEnvios registros...');
+
     try {
       final config = await _dbHelper.getActiveUrlConfig();
       if (config == null) throw Exception('No hay URL configurada activa');
-      debugPrint('═══════════════════════════════════════════════════');
-      debugPrint('🚀 [ENVIAR] Config activa: url=${config['url']}, usuario=${config['usuario']}');
-
-      final endpoints = await _dbHelper.getEndpoints();
-      debugPrint('🚀 [ENVIAR] Endpoints disponibles: ${endpoints.map((e) => e['nombre']).toList()}');
-      String endpointPath = 'sync/monitoreos'; // Fallback
       
+      final endpoints = await _dbHelper.getEndpoints();
+      String endpointPath = 'sync/monitoreos';
       try {
         final target = endpoints.firstWhere((e) => e['nombre'].toString().contains('sync'));
         endpointPath = target['nombre'];
-        debugPrint('🚀 [ENVIAR] Endpoint encontrado: $endpointPath');
-      } catch (_) {
-        debugPrint('⚠️ [ENVIAR] No se encontró endpoint "sync", usando predeterminado: $endpointPath');
-      }
+      } catch (_) {}
 
       final Uri syncUrl = Uri.parse(config['url'] + endpointPath);
-      debugPrint('🚀 [ENVIAR] URL completa: $syncUrl');
-      List<Map<String, dynamic>> payloadList = [];
-
+      
       final prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString('token') ?? '';
-      debugPrint('🚀 [ENVIAR] Token presente: ${token.isNotEmpty} (longitud: ${token.length})');
-
-      for (var record in _recordsPending) {
-        if (_selectedIds.contains(record['id'])) {
-          final item = {
-            "id": record['id'],
-            "device_id": "MOBILE-DATA",
-            "programa_id": record['programa_id'],
-            "estacion_id": record['estacion_id'],
-            "fecha_hora": record['fecha_hora'],
-            "monitoreo_fallido": record['monitoreo_fallido'],
-            "observacion": record['observacion'],
-            "matriz_id": record['matriz_id'],
-            "equipo_multi_id": record['equipo_multi_id'],
-            "turbidimetro_id": record['turbidimetro_id'],
-            "metodo_id": record['metodo_id'],
-            "hidroquimico": record['hidroquimico'],
-            "isotopico": record['isotopico'],
-            "cod_laboratorio": record['cod_laboratorio'],
-            "usuario_id": record['usuario_id'],
-            "is_draft": 0,
-            "equipo_nivel_id": record['equipo_nivel_id'],
-            "tipo_pozo": record['tipo_pozo'],
-            "fecha_hora_nivel": record['fecha_hora_nivel'],
-            "temperatura": record['temperatura'],
-            "ph": record['ph'],
-            "conductividad": record['conductividad'],
-            "oxigeno": record['oxigeno'],
-            "turbiedad": record['turbiedad'],
-            "profundidad": record['profundidad'],
-            "nivel": record['nivel'],
-            "latitud": record['latitud'],
-            "longitud": record['longitud'],
-            "foto_path": await _compressAndEncodeImage(record['foto_path']),
-            "foto_multiparametro": await _compressAndEncodeImage(record['foto_multiparametro']),
-            "foto_turbiedad": await _compressAndEncodeImage(record['foto_turbiedad']),
-          };
-          debugPrint('───────────────────────────────────────────────────');
-          debugPrint('📦 [ENVIAR] Registro id=${record['id']}:');
-          item.forEach((key, value) {
-            if (key.contains('foto') && value != null) {
-              debugPrint('   $key: [base64 imagen, ${(value as String).length} chars]');
-            } else {
-              debugPrint('   $key: $value');
-            }
-          });
-          payloadList.add(item);
-        }
-      }
-
-      debugPrint('───────────────────────────────────────────────────');
-      debugPrint('🚀 [ENVIAR] Total registros en payload: ${payloadList.length}');
-
-      final payload = {"monitoreos": payloadList};
-      final jsonBody = jsonEncode(payload);
-      debugPrint('🚀 [ENVIAR] Tamaño del body JSON: ${jsonBody.length} caracteres');
       
       Map<String, String> headers = {
         'Content-Type': 'application/json',
@@ -236,51 +186,161 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
       if (token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
-        debugPrint('🔑 [ENVIAR] Usando Autenticación Bearer Token.');
       } else {
         final auth = '${config['usuario']}:${config['contrasenia']}';
         headers['Authorization'] = 'Basic ${base64Encode(utf8.encode(auth))}';
-        debugPrint('🔑 [ENVIAR] Token vacío. Usando Autenticación Basic (user: ${config['usuario']}).');
       }
 
-      debugPrint('🚀 [ENVIAR] Headers: $headers');
-      debugPrint('🚀 [ENVIAR] Enviando POST a $syncUrl ...');
+      // --- LOGICA SECUENCIAL ---
+      for (var record in _recordsPending) {
+        if (_selectedIds.contains(record['id'])) {
+          try {
+            final Stopwatch recordTimer = Stopwatch()..start();
+            debugPrint('⏱️ [TIEMPOS] 🚀 Iniciando envío ${enviosCompletados + 1} de $totalEnvios (ID: ${record['id']})...');
 
-      final response = await http.post(
-        syncUrl,
-        headers: headers,
-        body: jsonBody,
-      ).timeout(const Duration(seconds: 30));
+            final item = {
+              "id": record['id'],
+              "device_id": "MOBILE-DATA",
+              "programa_id": record['programa_id'],
+              "estacion_id": record['estacion_id'],
+              "fecha_hora": record['fecha_hora'],
+              "monitoreo_fallido": record['monitoreo_fallido'],
+              "observacion": record['observacion'],
+              "matriz_id": record['matriz_id'],
+              "equipo_multi_id": record['equipo_multi_id'],
+              "turbidimetro_id": record['turbidimetro_id'],
+              "metodo_id": record['metodo_id'],
+              "hidroquimico": record['hidroquimico'],
+              "isotopico": record['isotopico'],
+              "cod_laboratorio": record['cod_laboratorio'],
+              "usuario_id": record['usuario_id'],
+              "is_draft": 0,
+              "equipo_nivel_id": record['equipo_nivel_id'],
+              "tipo_pozo": record['tipo_pozo'],
+              "fecha_hora_nivel": record['fecha_hora_nivel'],
+              "temperatura": record['temperatura'],
+              "ph": record['ph'],
+              "conductividad": record['conductividad'],
+              "oxigeno": record['oxigeno'],
+              "turbiedad": record['turbiedad'],
+              "profundidad": record['profundidad'],
+              "nivel": record['nivel'],
+              "latitud": record['latitud'],
+              "longitud": record['longitud'],
+              "foto_path": await _compressAndEncodeImage(record['foto_path']),
+              "foto_multiparametro": await _compressAndEncodeImage(record['foto_multiparametro']),
+              "foto_turbiedad": await _compressAndEncodeImage(record['foto_turbiedad']),
+            };
 
-      debugPrint('═══════════════════════════════════════════════════');
-      debugPrint('📥 [RESPUESTA] Status Code: ${response.statusCode}');
-      debugPrint('📥 [RESPUESTA] Headers: ${response.headers}');
-      debugPrint('📥 [RESPUESTA] Body: ${response.body}');
-      debugPrint('═══════════════════════════════════════════════════');
+            final payload = {"monitoreos": [item]};
+            final jsonBody = jsonEncode(payload);
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        for (int id in _selectedIds) {
-          await _dbHelper.updateRegistroMonitoreo(id, {'is_draft': 2}); // 2 = Enviado
+            cronometroRed.start();
+            final response = await http.post(
+              syncUrl,
+              headers: headers,
+              body: jsonBody,
+            ).timeout(const Duration(seconds: 30));
+            cronometroRed.stop();
+
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              final responseData = jsonDecode(response.body);
+              bool successfullySaved = false;
+
+              // 🛡️ [API VALIDATION] Strict checking of successful save
+              if (responseData['status'] == 'success') {
+                final syncedIds = responseData['data']?['synced_ids'] as List?;
+                if (syncedIds != null && syncedIds.isNotEmpty) {
+                  successfullySaved = true;
+                } else if (responseData['data']?['failed_records']?.isEmpty ?? false) {
+                  successfullySaved = true; // Fallback 
+                }
+              }
+
+              if (successfullySaved) {
+                await _dbHelper.updateRegistroMonitoreo(record['id'], {'is_draft': 2});
+                enviosExitosos++;
+                debugPrint('⏱️ [TIEMPOS] ✅ Registro ${record['id']} confirmado por API en ${recordTimer.elapsedMilliseconds / 1000}s');
+              } else {
+                throw Exception('Rechazado por el servidor: No se han recibido IDs de sincronización válidos.');
+              }
+            } else {
+              throw Exception('Error del servidor (${response.statusCode}): ${response.body}');
+            }
+          } catch (e) {
+            debugPrint('❌ [ENVIAR] Registro ${record['id']} falló: $e');
+            syncErrors.add('ID ${record['id']}: ${e.toString().replaceAll('Exception: ', '')}');
+          } finally {
+            enviosCompletados++;
+            if (dialogSetState != null) {
+              dialogSetState!(() {});
+            }
+          }
         }
-        debugPrint('✅ [ENVIAR] Todos los registros marcados como enviados.');
-        if (mounted) {
-          Navigator.pop(context); // Cerrar loader
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ Datos sincronizados correctamente'), backgroundColor: Colors.green));
-          _loadData();
-        }
-      } else {
-        debugPrint('❌ [ENVIAR] Error del servidor: ${response.statusCode} - ${response.body}');
-        throw Exception('Error del servidor: ${response.statusCode} - ${response.body}');
       }
-    } catch (e, stackTrace) {
-      debugPrint('═══════════════════════════════════════════════════');
-      debugPrint('❌ [ENVIAR] EXCEPCIÓN: $e');
-      debugPrint('❌ [ENVIAR] STACK TRACE: $stackTrace');
-      debugPrint('═══════════════════════════════════════════════════');
+
       if (mounted) {
         Navigator.pop(context); // Cerrar loader
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error al enviar: $e'), backgroundColor: Colors.red));
+        
+        if (syncErrors.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('✅ Todos los datos sincronizados correctamente'), backgroundColor: Colors.green)
+          );
+        } else {
+          // Mostrar resumen de errores
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: enviosExitosos > 0 ? Colors.orange : Colors.red),
+                  const SizedBox(width: 10),
+                  const Text('Resumen de Sincronización'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('✔️ Éxitos: $enviosExitosos'),
+                  Text('❌ Fallidos: ${syncErrors.length}'),
+                  const Divider(),
+                  const Text('Detalles de Errores:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 150,
+                    width: double.maxFinite,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: syncErrors.length,
+                      itemBuilder: (ctx, i) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4.0),
+                        child: Text('• ${syncErrors[i]}', style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('ENTENDIDO'),
+                ),
+              ],
+            ),
+          );
+        }
+        _loadData();
       }
+    } catch (e) {
+      debugPrint('❌ [ENVIAR] ERROR CRÍTICO FUERA DEL LOOP: $e');
+      if (mounted) {
+        Navigator.pop(context); // Cerrar loader
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error crítico: $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      cronometroTotal.stop();
+      debugPrint('⏱️ [TIEMPOS] 🏁 Proceso completo finalizado en ${cronometroTotal.elapsedMilliseconds / 1000} segundos.');
     }
   }
 

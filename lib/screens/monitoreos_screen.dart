@@ -247,6 +247,10 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                 child: const Icon(Icons.delete_outline,
                                     color: Colors.white),
                               ),
+                              confirmDismiss: (direction) async {
+                                final bool confirm = await _verifyDeletionPin();
+                                return confirm;
+                              },
                               onDismissed: (direction) async {
                                 await _dbHelper.deleteRegistroMonitoreo(item['id']);
                                 setState(() {
@@ -326,6 +330,12 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                                   ),
                                                   child: const Text('ENVIADO', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
                                                 ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                        onPressed: isSynced ? null : () => _deleteSingleRecord(item['id']),
+                                        tooltip: isSynced ? 'Registros enviados no se pueden eliminar' : 'Eliminar registro',
+                                      ),
                                     ],
                                   ),
                                   onTap: () {
@@ -350,6 +360,33 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _deleteSingleRecord(int id) async {
+    final bool isAuthorized = await _verifyDeletionPin();
+    if (!isAuthorized) return;
+
+    try {
+      await _dbHelper.deleteRegistroMonitoreo(id);
+      _loadMonitoreos();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Registro eliminado correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _confirmarEliminarTodo(BuildContext context) async {
