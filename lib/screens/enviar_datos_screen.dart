@@ -39,6 +39,12 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     }
   }
 
+  String? _formatDateForPython(String? isoDate) {
+    if (isoDate == null || isoDate.isEmpty) return null;
+    // Removes the 'T' and strips milliseconds: "2026-03-30T05:04:00.000" -> "2026-03-30 05:04:00"
+    return isoDate.replaceAll('T', ' ').split('.').first;
+  }
+
   Future<void> _log(String message) async {
     debugPrint(message);
     // Aquí puedes mantener la lógica de escribir en el archivo txt si la tienes en dbHelper
@@ -203,7 +209,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               "device_id": "MOBILE-DATA",
               "programa_id": record['programa_id'],
               "estacion_id": record['estacion_id'],
-              "fecha_hora": record['fecha_hora'],
+              "fecha_hora": _formatDateForPython(record['fecha_hora']),
               "monitoreo_fallido": record['monitoreo_fallido'],
               "observacion": record['observacion'],
               "matriz_id": record['matriz_id'],
@@ -217,7 +223,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               "is_draft": 0,
               "equipo_nivel_id": record['equipo_nivel_id'],
               "tipo_pozo": record['tipo_pozo'],
-              "fecha_hora_nivel": record['fecha_hora_nivel'],
+              "fecha_hora_nivel": _formatDateForPython(record['fecha_hora_nivel']),
               "temperatura": record['temperatura'],
               "ph": record['ph'],
               "conductividad": record['conductividad'],
@@ -234,6 +240,8 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
             final payload = {"monitoreos": [item]};
             final jsonBody = jsonEncode(payload);
+            debugPrint('🩻 [DEEP DEBUG] Payload enviado al servidor para ID ${record['id']}:');
+            debugPrint(jsonBody); // Imprime el JSON exacto para poder probarlo en Postman
 
             cronometroRed.start();
             final response = await http.post(
@@ -243,29 +251,24 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             ).timeout(const Duration(seconds: 30));
             cronometroRed.stop();
 
+            debugPrint('🩻 [DEEP DEBUG] Status Code recibido: ${response.statusCode}');
+            debugPrint('🩻 [DEEP DEBUG] Body recibido del servidor:');
+            debugPrint(response.body); // El HTML o JSON con el stack trace del error 500
+
             if (response.statusCode == 200 || response.statusCode == 201) {
               final responseData = jsonDecode(response.body);
-              bool successfullySaved = false;
 
-              // 🛡️ [API VALIDATION] Strict checking of successful save
               if (responseData['status'] == 'success') {
-                final syncedIds = responseData['data']?['synced_ids'] as List?;
-                if (syncedIds != null && syncedIds.isNotEmpty) {
-                  successfullySaved = true;
-                } else if (responseData['data']?['failed_records']?.isEmpty ?? false) {
-                  successfullySaved = true; // Fallback 
-                }
-              }
-
-              if (successfullySaved) {
                 await _dbHelper.updateRegistroMonitoreo(record['id'], {'is_draft': 2});
                 enviosExitosos++;
-                debugPrint('⏱️ [TIEMPOS] ✅ Registro ${record['id']} confirmado por API en ${recordTimer.elapsedMilliseconds / 1000}s');
+                if (dialogSetState != null) dialogSetState!(() {});
+                debugPrint('⏱️ [TIEMPOS] ✅ Éxito: ${responseData['mensaje']}');
               } else {
-                throw Exception('Rechazado por el servidor: No se han recibido IDs de sincronización válidos.');
+                throw Exception('Rechazado por API: ${responseData['mensaje'] ?? 'Error desconocido'}');
               }
             } else {
-              throw Exception('Error del servidor (${response.statusCode}): ${response.body}');
+              String errorSnippet = response.body.length > 150 ? '${response.body.substring(0, 150)}...' : response.body;
+              throw Exception('Error del servidor (${response.statusCode}): $errorSnippet');
             }
           } catch (e) {
             debugPrint('❌ [ENVIAR] Registro ${record['id']} falló: $e');
@@ -295,7 +298,9 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                 children: [
                   Icon(Icons.warning_amber_rounded, color: enviosExitosos > 0 ? Colors.orange : Colors.red),
                   const SizedBox(width: 10),
-                  const Text('Resumen de Sincronización'),
+                  const Expanded(
+                    child: Text('Resumen de Sincronización', overflow: TextOverflow.ellipsis),
+                  ),
                 ],
               ),
               content: Column(
@@ -441,22 +446,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                     final int id = record['id'];
                     final bool isSelected = _selectedIds.contains(id);
 
-                    return ListTile(
-                      leading: Checkbox(
-                        value: isSelected,
-                        onChanged: (val) {
-                          setState(() {
-                            if (val == true) {
-                              _selectedIds.add(id);
-                            } else {
-                              _selectedIds.remove(id);
-                            }
-                          });
-                        },
-                      ),
-                      title: Text(record['nombre_estacion'] ?? 'Estación Desconocida', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(formatDateTime(record['fecha_hora'])),
-                      trailing: const Icon(Icons.check_circle_outline, color: Colors.amber),
+                    return InkWell(
                       onTap: () {
                         setState(() {
                           if (isSelected) {
@@ -466,6 +456,43 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                           }
                         });
                       },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: isSelected,
+                              onChanged: (val) {
+                                setState(() {
+                                  if (val == true) {
+                                    _selectedIds.add(id);
+                                  } else {
+                                    _selectedIds.remove(id);
+                                  }
+                                });
+                              },
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    record['nombre_estacion'] ?? 'Estación Desconocida',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    formatDateTime(record['fecha_hora']),
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.check_circle_outline, color: Colors.amber),
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -482,10 +509,30 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       itemCount: _recordsSent.length,
       itemBuilder: (context, index) {
         final record = _recordsSent[index];
-        return ListTile(
-          leading: const Icon(Icons.cloud_done, color: Colors.green),
-          title: Text(record['nombre_estacion'] ?? 'Estación Desconocida', style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(formatDateTime(record['fecha_hora'])),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(Icons.cloud_done, color: Colors.green),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      record['nombre_estacion'] ?? 'Estación Desconocida',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      formatDateTime(record['fecha_hora']),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

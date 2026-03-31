@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 
 class ApiService {
@@ -40,7 +41,12 @@ class ApiService {
     final endpointData = await _dbHelper.getEndpoints();
     final endpoints = endpointData
         .map((e) => e['nombre'].toString())
-        .where((name) => name != 'sync/monitoreos')
+        .where((name) {
+          final lowerName = name.toLowerCase();
+          return lowerName != 'sync/monitoreos' && 
+                 !lowerName.contains('muestra') && 
+                 !lowerName.contains('historial');
+        })
         .toList();
     
     if (endpoints.isEmpty) throw Exception('No hay endpoints configurados para sincronizar.');
@@ -58,7 +64,19 @@ class ApiService {
       for (int i = 0; i < endpoints.length; i++) {
         if (responses[i].statusCode == 200) {
           final data = json.decode(responses[i].body);
-          allResults.addAll(data as Map<String, dynamic>);
+          final endpointName = endpoints[i];
+
+          if (data is Map<String, dynamic>) {
+            // The API wrapped the response in an object (e.g., {"usuarios": [...]})
+            allResults.addAll(data);
+          } else if (data is List) {
+            // The API sent a raw array (e.g., [...]). We wrap it manually using the endpoint name.
+            // Clean the endpoint name if it contains slashes (e.g., 'api/usuarios' -> 'usuarios')
+            final keyName = endpointName.split('/').last;
+            allResults[keyName] = data;
+          } else {
+            debugPrint('⚠️ Formato desconocido para el endpoint $endpointName: ${data.runtimeType}');
+          }
         } else {
           throw Exception('Failed to load ${endpoints[i]}: ${responses[i].statusCode}');
         }
