@@ -89,8 +89,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   Future<void> _handleSync() async {
     setState(() => _isSyncing = true);
     try {
-      final data = await _apiService.fetchAllData();
-      await _dbHelper.syncData(data);
+      await _apiService.fetchAllData();
       await _loadAllData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

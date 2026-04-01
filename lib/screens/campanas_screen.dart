@@ -347,6 +347,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                     Expanded(
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
+                          isExpanded: true,
                           value: _selectedProgramId,
                           hint: const Text('Programa', style: TextStyle(color: Colors.white70, fontSize: 13)),
                           dropdownColor: Colors.grey[900],
@@ -358,6 +359,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                               child: Text(
                                 'Todos los Programas',
                                 style: TextStyle(color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             ..._programs.map((p) => DropdownMenuItem<int>(
@@ -365,6 +367,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                                   child: Text(
                                     p.name,
                                     style: const TextStyle(color: Colors.white),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 )),
                           ],
@@ -372,10 +375,16 @@ class _CampanasScreenState extends State<CampanasScreen> {
                         ),
                       ),
                     ),
-                    const VerticalDivider(color: Colors.white30, width: 20),
+                    Container(
+                      height: 24,
+                      width: 1,
+                      color: Colors.white30,
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
                     Expanded(
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
+                          isExpanded: true,
                           value: _selectedStationId,
                           hint: const Text('Seleccione', style: TextStyle(color: Colors.white70, fontSize: 13)),
                           dropdownColor: Colors.grey[900],

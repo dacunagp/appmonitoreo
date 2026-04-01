@@ -9,8 +9,8 @@ class Program {
 
   factory Program.fromJson(Map<String, dynamic> json) {
     return Program(
-      id: json['id'],
-      name: json['nombre'],
+      id: json['id_campana'] ?? json['id'] ?? 0,
+      name: json['nombre_campana'] ?? json['nombre'] ?? 'Sin nombre',
     );
   }
 
@@ -43,10 +43,10 @@ class Station {
 
   factory Station.fromJson(Map<String, dynamic> json) {
     return Station(
-      id: json['id'],
-      name: json['estacion'],
-      latitude: (json['latitud'] as num).toDouble(),
-      longitude: (json['longitud'] as num).toDouble(),
+      id: json['id_estacion'] ?? json['id'] ?? 0,
+      name: json['nombre_estacion'] ?? json['estacion'] ?? json['nombre'] ?? 'Sin nombre',
+      latitude: (json['latitud'] ?? 0.0 as num).toDouble(),
+      longitude: (json['longitud'] ?? 0.0 as num).toDouble(),
     );
   }
 
@@ -79,9 +79,9 @@ class Usuario {
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
     return Usuario(
-      idUsuario: json['id_usuario'],
-      nombre: json['nombre'],
-      apellido: json['apellido'],
+      idUsuario: json['id_usuario'] ?? json['id'] ?? 0,
+      nombre: json['nombre'] ?? 'Sin nombre',
+      apellido: json['apellido'] ?? '',
     );
   }
 
@@ -112,8 +112,8 @@ class Metodo {
 
   factory Metodo.fromJson(Map<String, dynamic> json) {
     return Metodo(
-      idMetodo: json['id_metodo'],
-      metodo: json['metodo'],
+      idMetodo: json['id_metodo'] ?? json['id'] ?? 0,
+      metodo: json['metodo'] ?? 'Sin nombre',
     );
   }
 
@@ -143,8 +143,8 @@ class Matriz {
 
   factory Matriz.fromJson(Map<String, dynamic> json) {
     return Matriz(
-      idMatriz: json['id_matriz'],
-      nombreMatriz: json['nombre_matriz'],
+      idMatriz: json['id_matriz'] ?? json['id'] ?? 0,
+      nombreMatriz: json['nombre_matriz'] ?? json['nombre'] ?? 'Sin nombre',
     );
   }
 
@@ -174,8 +174,8 @@ class TipoEquipo {
 
   factory TipoEquipo.fromJson(Map<String, dynamic> json) {
     return TipoEquipo(
-      idForm: json['id_form'],
-      tipo: json['tipo'],
+      idForm: json['id_form'] ?? 0,
+      tipo: json['tipo'] ?? 'Sin tipo',
     );
   }
 
@@ -207,9 +207,9 @@ class EquipoDetalle {
 
   factory EquipoDetalle.fromJson(Map<String, dynamic> json, int idFormFk) {
     return EquipoDetalle(
-      id: json['id'],
-      codigo: json['codigo'],
-      idFormFk: idFormFk,
+      id: json['id_equipo'] ?? json['id'] ?? 0,
+      codigo: json['codigo_equipo'] ?? json['codigo'] ?? 'Sin código',
+      idFormFk: json['id_form'] ?? idFormFk,
     );
   }
 

@@ -56,14 +56,9 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
     try {
       final ApiService apiService = ApiService();
       setState(() => _loadingMessage = 'Conectando con el servidor...');
-      final data = await apiService.fetchNamespacedEndpoint('campanas');
       
-      setState(() => _loadingMessage = 'Sincronizando programas y estaciones...');
-      if (data.containsKey('campanas')) {
-        await _dbHelper.syncCampanas(data['campanas']);
-      } else {
-        throw Exception('El servidor no retornó la lista de campañas.');
-      }
+      // Usar el método unificado que ya maneja las listas de FastAPI y las estaciones anidadas
+      await apiService.fetchAllData();
       
       setState(() => _loadingMessage = 'Actualizando datos locales...');
       await _loadData();

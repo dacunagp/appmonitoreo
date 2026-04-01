@@ -58,11 +58,8 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
       _syncStatusMessage = 'Conectando al servidor...';
     });
     try {
-      final data = await _apiService.fetchAllData();
-      setState(() => _syncStatusMessage = 'Descargando programas e información...');
-      
-      await _dbHelper.syncData(data);
-      setState(() => _syncStatusMessage = 'Guardando en base de datos local...');
+      await _apiService.fetchAllData();
+      setState(() => _syncStatusMessage = 'Datos guardados correctamente...');
       
       await _loadPrograms();
       if (mounted) {

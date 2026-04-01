@@ -804,6 +804,99 @@ class DatabaseHelper {
     });
   }
 
+  // --- BATCH SAVE METHODS FOR API RESILIENCE ---
+  
+  Future<void> saveProgramsBatch(List<Program> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    batch.delete('programs');
+    batch.delete('stations');
+    batch.delete('program_stations');
+    for (var p in items) {
+      batch.insert('programs', {'id': p.id, 'name': p.name}, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveStationsBatch(int programId, List<Station> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    for (var s in items) {
+      batch.insert('stations', {
+        'id': s.id,
+        'name': s.name,
+        'latitude': s.latitude,
+        'longitude': s.longitude
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      batch.insert('program_stations', {
+        'program_id': programId,
+        'station_id': s.id
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveUsersBatch(List<Usuario> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    batch.delete('usuarios');
+    for (var u in items) {
+      batch.insert('usuarios', u.toMap());
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveMetodosBatch(List<Metodo> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    batch.delete('metodos');
+    for (var m in items) {
+      batch.insert('metodos', m.toMap());
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveMatricesBatch(List<Matriz> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    batch.delete('matrices');
+    for (var m in items) {
+      batch.insert('matrices', m.toMap());
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveEquiposBatch(List<Map<String, dynamic>> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    batch.delete('equipos');
+    for (var e in items) {
+      batch.insert('equipos', e);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<void> saveParametrosBatch(List<Parametro> items) async {
+    final db = await database;
+    Batch batch = db.batch();
+    batch.delete('parametros');
+    for (var p in items) {
+      final map = p.toMap();
+      // Adjust keys for DB schema if necessary
+      final dbMap = {
+        'id': map['id_parametro'],
+        'nombre': map['nombre_parametro'],
+        'clave_interna': map['clave_interna'],
+        'unidad': map['unidad'],
+        'minimo': map['min'],
+        'maximo': map['max'],
+        'activo': 1 // Default to active when synced
+      };
+      batch.insert('parametros', dbMap);
+    }
+    await batch.commit(noResult: true);
+  }
+
   Future<List<Map<String, dynamic>>> getEndpoints() async {
     final db = await database;
     return await db.query('endpoints', orderBy: 'nombre ASC');

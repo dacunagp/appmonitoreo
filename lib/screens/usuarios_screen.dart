@@ -58,14 +58,9 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
       final ApiService apiService = ApiService();
       
       setState(() => _loadingMessage = 'Conectando con el servidor...');
-      final data = await apiService.fetchNamespacedEndpoint('usuarios');
       
-      setState(() => _loadingMessage = 'Sincronizando lista de usuarios...');
-      if (data.containsKey('usuarios')) {
-        await _dbHelper.syncUsuarios(data['usuarios']);
-      } else {
-        throw Exception('El servidor no retornó la lista de usuarios.');
-      }
+      // Usar el método unificado que ya maneja las listas de FastAPI
+      await apiService.fetchAllData();
       
       setState(() => _loadingMessage = 'Actualizando lista de usuarios...');
       await _loadUsers(showMessage: false);
