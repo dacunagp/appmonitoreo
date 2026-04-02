@@ -33,40 +33,43 @@ class _HistorialScreenState extends State<HistorialScreen> {
       dateFilter = DateFormat('yyyy-MM-dd').format(_selectedDate!);
     }
     
-    final data = await _dbHelper.getHistorialMuestras(dateFilter: dateFilter);
+    try {
+      final summaryList = await _dbHelper.getHistorialSummary(dateFilter: dateFilter);
 
-    // Grouping in Dart using collection package
-    final grouped = groupBy(data, (Map m) => m['estacion'] ?? 'Sin Estación');
-
-    final List<Map<String, dynamic>> processedPoints =
-        grouped.entries.map((entry) {
-      final samples = entry.value;
-      // Sort samples by date descending to get the last sync date
-      samples.sort((a, b) => (b['fecha'] ?? '').compareTo(a['fecha'] ?? ''));
-
-      // 🚨 FIX: Parse and format the raw ISO date string
-      String formattedDate = 'N/A';
-      if (samples.isNotEmpty && samples.first['fecha'] != null) {
-        try {
-          DateTime dt = DateTime.parse(samples.first['fecha']);
-          formattedDate = DateFormat('dd/MM/yyyy').format(dt);
-        } catch (e) {
-          formattedDate = samples.first['fecha'].toString();
+      final List<Map<String, dynamic>> processedPoints = summaryList.map((row) {
+        String formattedDate = 'N/A';
+        final rawDate = row['raw_last_date'];
+        if (rawDate != null) {
+          try {
+            DateTime dt = DateTime.parse(rawDate.toString());
+            formattedDate = DateFormat('dd/MM/yyyy').format(dt);
+          } catch (e) {
+            formattedDate = rawDate.toString();
+          }
         }
+
+        return {
+          'estacion': row['estacion'] ?? 'Sin Estación',
+          'count': row['count'] ?? 0,
+          'last_sync_date': formattedDate,
+        };
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          _groupedPoints = processedPoints;
+          _filteredPoints = processedPoints;
+          _isLoading = false;
+        });
       }
-
-      return {
-        'estacion': entry.key,
-        'count': samples.length,
-        'last_sync_date': formattedDate,
-      };
-    }).toList();
-
-    setState(() {
-      _groupedPoints = processedPoints;
-      _filteredPoints = processedPoints;
-      _isLoading = false;
-    });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error cargando historial: $e')),
+        );
+      }
+    }
   }
 
   void _filterPoints(String query) {

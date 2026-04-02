@@ -77,8 +77,8 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
       // 1. Fetch ALL parameters dynamically
       final params = await dbHelper.getParametros();
       
-      // 2. Fetch stations with program alias
-      final stations = await dbHelper.getStationsWithPrograms();
+      // 2. Fetch ONLY stations with historical data
+      final stations = await dbHelper.getDownloadedStationsWithPrograms();
       
       // 3. Restore from Provider (Scenario B)
       if (mounted) {
@@ -249,8 +249,6 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
         ),
         primaryYAxis: NumericAxis(
           isInversed: _invertirEje,
-          minimum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados[0].min : null,
-          maximum: _parametrosSeleccionados.isNotEmpty ? _parametrosSeleccionados[0].max : null,
           title: AxisTitle(
             text: _parametrosSeleccionados.isNotEmpty 
               ? '${_parametrosSeleccionados[0].nombreParametro} [${_parametrosSeleccionados[0].unidad}]' 
@@ -266,8 +264,6 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
             NumericAxis(
               name: 'secondaryYAxis',
               opposedPosition: true,
-              minimum: _parametrosSeleccionados[1].min,
-              maximum: _parametrosSeleccionados[1].max,
               title: AxisTitle(
                 text: '${_parametrosSeleccionados[1].nombreParametro} [${_parametrosSeleccionados[1].unidad}]',
                 textStyle: TextStyle(color: _colorSerie2, fontSize: 10),
@@ -404,6 +400,9 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
   Future<void> _mostrarDialogoSeleccionParametros({
     required String titulo,
   }) async {
+    final TextEditingController searchController = TextEditingController();
+    List<Parametro> filteredList = List.from(_parametrosList);
+
     await showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -414,43 +413,67 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
               backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               title: Text(titulo, style: const TextStyle(fontSize: 16)),
-              contentPadding: const EdgeInsets.only(top: 12),
+              contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               content: SizedBox(
                 width: double.maxFinite,
-                height: 350,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _parametrosList.length,
-                  itemBuilder: (context, index) {
-                    final param = _parametrosList[index];
-                    final isSelected = _parametrosSeleccionados.contains(param);
-                    return CheckboxListTile(
-                      title: Text(param.nombreParametro, style: const TextStyle(fontSize: 14)),
-                      secondary: const Icon(Icons.science, color: Colors.green, size: 20),
-                      value: isSelected,
-                      activeColor: Colors.blueAccent,
-                      checkColor: Colors.white,
-                      onChanged: (bool? value) {
+                height: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Buscar parámetro...',
+                        prefixIcon: const Icon(Icons.search, color: Colors.blueAccent),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onChanged: (value) {
                         setStateDialog(() {
-                          if (value == true) {
-                            if (_parametrosSeleccionados.length < 2) {
-                              _parametrosSeleccionados.add(param);
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Máximo 2 parámetros'), duration: Duration(seconds: 1)),
-                              );
-                            }
-                          } else {
-                            _parametrosSeleccionados.remove(param);
-                          }
-                        });
-                        // Update main state to show selection in real-time
-                        setState(() {
-                          _hasGraphed = false;
+                          filteredList = _parametrosList.where((p) => p.nombreParametro.toLowerCase().contains(value.toLowerCase())).toList();
                         });
                       },
-                    );
-                  },
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredList.length,
+                        itemBuilder: (context, index) {
+                          final param = filteredList[index];
+                          final isSelected = _parametrosSeleccionados.contains(param);
+                          return CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(param.nombreParametro, style: const TextStyle(fontSize: 14)),
+                            secondary: const Icon(Icons.science, color: Colors.green, size: 20),
+                            value: isSelected,
+                            activeColor: Colors.blueAccent,
+                            checkColor: Colors.white,
+                            onChanged: (bool? value) {
+                              setStateDialog(() {
+                                if (value == true) {
+                                  if (_parametrosSeleccionados.length < 2) {
+                                    _parametrosSeleccionados.add(param);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Máximo 2 parámetros'), duration: Duration(seconds: 1)),
+                                    );
+                                  }
+                                } else {
+                                  _parametrosSeleccionados.remove(param);
+                                }
+                              });
+                              // Update main state to show selection in real-time
+                              setState(() {
+                                _hasGraphed = false;
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               actions: [
@@ -474,41 +497,77 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
     required bool esEstacion,
     required Function(dynamic) onSeleccionado,
   }) async {
+    final TextEditingController searchController = TextEditingController();
+    List<Map<String, dynamic>> filteredList = List.from(_estacionesList);
+
     await showDialog(
       context: context,
       builder: (BuildContext context) {
-        final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-        return AlertDialog(
-          backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          title: Text(titulo, style: const TextStyle(fontSize: 16)),
-          contentPadding: const EdgeInsets.only(top: 12),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 350,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: _estacionesList.length,
-              itemBuilder: (context, index) {
-                final item = _estacionesList[index];
-                return ListTile(
-                  title: Text(item['estacion'] ?? 'S/N', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                  subtitle: Text(item['program_name'] ?? 'Sin programa', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  leading: const Icon(Icons.location_on, color: Colors.blueAccent, size: 20),
-                  onTap: () {
-                    onSeleccionado(item);
-                    Navigator.of(context).pop();
-                  },
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('CANCELAR', style: TextStyle(color: Colors.blueAccent)),
-            ),
-          ],
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+            return AlertDialog(
+              backgroundColor: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              title: Text(titulo, style: const TextStyle(fontSize: 16)),
+              contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Buscar...',
+                        prefixIcon: const Icon(Icons.search, color: Colors.blueAccent),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      onChanged: (value) {
+                        setStateDialog(() {
+                          filteredList = _estacionesList.where((item) {
+                            final estacion = (item['estacion'] ?? '').toString().toLowerCase();
+                            final programa = (item['program_name'] ?? '').toString().toLowerCase();
+                            final query = value.toLowerCase();
+                            return estacion.contains(query) || programa.contains(query);
+                          }).toList();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredList.length,
+                        itemBuilder: (context, index) {
+                          final item = filteredList[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(item['estacion'] ?? 'S/N', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                            subtitle: Text(item['program_name'] ?? 'Sin programa', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                            leading: const Icon(Icons.location_on, color: Colors.blueAccent, size: 20),
+                            onTap: () {
+                              onSeleccionado(item);
+                              Navigator.of(context).pop();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('CANCELAR', style: TextStyle(color: Colors.blueAccent)),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -530,14 +589,45 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
       final data = await _dbHelper.getHistorialMuestrasByStationName(selectedStationName);
 
       for (var param in _parametrosSeleccionados) {
-        final String selectedInternalKey = param.claveInterna;
+        // Enforce fallback directly here in case models weren't re-synced from DB
+        String selectedInternalKey = param.claveInterna.trim();
+        if (selectedInternalKey.isEmpty) {
+          selectedInternalKey = param.nombreParametro.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+        }
+
         debugPrint('📊 Solicitando gráfico para: $selectedStationName -> $selectedInternalKey');
 
-        final List<ChartData> mappedData = data.where((sample) => sample['parametro'] == selectedInternalKey).map((sample) {
+        final List<ChartData> mappedData = data.where((sample) {
+          final sampleParam = (sample['parametro'] ?? '').toString().toLowerCase().trim();
+          return sampleParam == selectedInternalKey.toLowerCase();
+        }).map((sample) {
           final dateValue = DateTime.tryParse(sample['fecha'] ?? '');
           final dynamicRaw = sample['valor'];
           final double? yValue = dynamicRaw is double ? dynamicRaw : double.tryParse(dynamicRaw?.toString() ?? '');
+
           if (dateValue != null && yValue != null) {
+            // 1. Start with catalog limits, or use wide open defaults
+            double minLimit = param.min ?? -99999.0;
+            double maxLimit = param.max ?? 99999.0;
+
+            // 2. Common-sense fallback if DB has no limits configured
+            final clave = param.claveInterna.toLowerCase();
+            if (param.min == null || param.max == null) {
+              if (clave.contains('temp')) {
+                minLimit = 0.1;   // Discard 0 (sensor-off error)
+                maxLimit = 60.0;  // Discard absurd values like 450°C
+              } else if (clave == 'ph' || clave == 'ph_agua') {
+                minLimit = 0.0;
+                maxLimit = 14.0;
+              } else if (clave.contains('oxigeno') || clave.contains('od')) {
+                minLimit = 0.0;
+                maxLimit = 20.0;
+              }
+            }
+
+            // 3. Apply strict filter
+            if (yValue < minLimit || yValue > maxLimit) return null;
+
             return ChartData(dateValue, yValue);
           }
           return null;

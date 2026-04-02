@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/security_utils.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentRoute;
@@ -202,10 +203,10 @@ class AppDrawer extends StatelessWidget {
             fontSize: 15,
           ),
         ),
-        onTap: () {
-          Navigator.pop(context);
+        onTap: () async {
+          if (context.mounted) Navigator.pop(context);
           if (currentRoute != targetRoute) {
-            Navigator.pushReplacementNamed(context, targetRoute);
+            if (context.mounted) Navigator.pushReplacementNamed(context, targetRoute);
           }
         },
       ),

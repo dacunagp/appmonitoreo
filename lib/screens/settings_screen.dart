@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_drawer.dart';
+import '../utils/security_utils.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -95,56 +96,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showChangePinDialog() async {
-    final TextEditingController pinController = TextEditingController();
-    return showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nuevo PIN de borrado'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Ingresa un nuevo PIN de 4 dígitos para autorizar la eliminación de registros.', style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Nuevo PIN',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.pin),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('CANCELAR'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newPin = pinController.text.trim();
-              if (newPin.length != 4 || int.tryParse(newPin) == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('El PIN debe tener exactamente 4 dígitos numéricos'), backgroundColor: Colors.red),
-                );
-                return;
-              }
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('deletion_pin', newPin);
-              if (mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('✅ PIN de borrado actualizado correctamente'), backgroundColor: Colors.green),
-                );
-              }
-            },
-            child: const Text('GUARDAR'),
-          ),
-        ],
-      ),
-    );
+    final prefs = await SharedPreferences.getInstance();
+    final currentSavedPin = prefs.getString('app_pin') ?? prefs.getString('deletion_pin');
+
+    if (currentSavedPin != null && currentSavedPin.isNotEmpty) {
+      // 1. Prompt for Old PIN
+      String? enteredOldPin = await SecurityUtils.showPinInputDialog(context, title: 'Ingrese PIN Actual');
+      if (enteredOldPin == null) return; // User cancelled
+      
+      if (enteredOldPin != currentSavedPin) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN actual incorrecto'), backgroundColor: Colors.red));
+        }
+        return; // Abort
+      }
+    }
+
+    // 2. Prompt for New PIN
+    if (mounted) {
+      String? newPin = await SecurityUtils.showPinInputDialog(context, title: 'Ingrese NUEVO PIN');
+      
+      if (newPin != null && newPin.length == 4 && int.tryParse(newPin) != null) {
+        await prefs.setString('app_pin', newPin);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ PIN actualizado correctamente'), backgroundColor: Colors.green));
+        }
+      }
+    }
   }
 }

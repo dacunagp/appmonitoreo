@@ -3,6 +3,7 @@ import '../database/database_helper.dart';
 import '../models/models.dart';
 import '../widgets/app_drawer.dart';
 import '../services/api_service.dart';
+import '../utils/security_utils.dart';
 
 class EstacionesScreen extends StatefulWidget {
   const EstacionesScreen({super.key});
@@ -155,7 +156,11 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
     );
   }
 
-  void _confirmDelete(int id) {
+  void _confirmDelete(int id) async {
+    final bool isAuthorized = await SecurityUtils.requirePin(context);
+    if (!isAuthorized) return;
+
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

@@ -172,9 +172,12 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
 
         final List<Map<String, dynamic>> parsedData = _apiService.transformToLongFormat(apiRecords);
         
-        // Save incrementally
-        await _dbHelper.syncHistoricalData(parsedData);
-        totalSincronizados += parsedData.length;
+        // Save incrementally passing the true API records length for accurate logging
+        await _dbHelper.syncHistoricalData(
+          parsedData, 
+          exactSampleCount: apiRecords.length,
+        );
+        totalSincronizados += apiRecords.length;
 
         // Small delay to allow the user to read the message if the API is fast
         await Future.delayed(const Duration(milliseconds: 300));
@@ -186,7 +189,7 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Se sincronizaron $totalSincronizados mediciones históricas')),
+          SnackBar(content: Text('Se sincronizaron $totalSincronizados muestras históricas')),
         );
       }
     } catch (e) {

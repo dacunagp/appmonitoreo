@@ -246,15 +246,24 @@ class Parametro {
     this.max,
   });
 
-  factory Parametro.fromJson(Map<String, dynamic> json) => Parametro(
-        idParametro: json['id_parametro'] ?? json['id'],
-        nombreParametro:
-            json['nombre_parametro'] ?? json['nombre'] ?? json['parametro'] ?? '',
-        claveInterna: json['clave_interna'] ?? '',
-        unidad: json['unidad'] ?? '',
-        min: json['min'] != null ? double.tryParse(json['min'].toString()) : null,
-        max: json['max'] != null ? double.tryParse(json['max'].toString()) : null,
-      );
+  factory Parametro.fromJson(Map<String, dynamic> json) {
+    final String rawName = json['nombre_parametro'] ?? json['nombre'] ?? json['parametro'] ?? '';
+    final String rawClave = json['clave_interna'] ?? '';
+
+    // Generate a safe internal key if missing (e.g., "pH Agua" -> "ph_agua")
+    final String safeClave = rawClave.trim().isNotEmpty
+        ? rawClave
+        : rawName.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+
+    return Parametro(
+      idParametro: json['id_parametro'] ?? json['id'],
+      nombreParametro: rawName,
+      claveInterna: safeClave,
+      unidad: json['unidad'] ?? '',
+      min: json['min'] != null ? double.tryParse(json['min'].toString()) : null,
+      max: json['max'] != null ? double.tryParse(json['max'].toString()) : null,
+    );
+  }
 
   Map<String, dynamic> toMap() => {
         'id_parametro': idParametro,

@@ -13,22 +13,45 @@ class ApiConfigScreen extends StatefulWidget {
 class _ApiConfigScreenState extends State<ApiConfigScreen> {
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Configuración API'),
-          bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
-            tabs: [
-              Tab(text: 'Servidores', icon: Icon(Icons.dns, size: 24)),
-              Tab(text: 'Endpoints', icon: Icon(Icons.api, size: 24)),
-              Tab(text: 'Seguridad', icon: Icon(Icons.security, size: 24)),
-            ],
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          // Force navigation back to the main screen
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: DefaultTabController(
+        length: 3,
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Configuración API'),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () {
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  '/monitoreos',
+                  (route) => false,
+                );
+              },
+            ),
+            bottom: const TabBar(
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white70,
+              indicatorColor: Colors.white,
+              tabs: [
+                Tab(text: 'Servidores', icon: Icon(Icons.dns, size: 24)),
+                Tab(text: 'Endpoints', icon: Icon(Icons.api, size: 24)),
+                Tab(text: 'Seguridad', icon: Icon(Icons.security, size: 24)),
+              ],
+            ),
           ),
-        ),
         drawer: const AppDrawer(currentRoute: '/api_config'),
         body: const TabBarView(
           children: [
@@ -38,8 +61,9 @@ class _ApiConfigScreenState extends State<ApiConfigScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class UrlAccessTab extends StatefulWidget {

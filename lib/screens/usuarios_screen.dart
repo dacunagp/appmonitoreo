@@ -3,6 +3,7 @@ import '../database/database_helper.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/app_drawer.dart';
+import '../utils/security_utils.dart';
 
 class UsuariosScreen extends StatefulWidget {
   const UsuariosScreen({super.key});
@@ -130,7 +131,11 @@ class _UsuariosScreenState extends State<UsuariosScreen> {
     );
   }
 
-  void _confirmDelete(int id) {
+  void _confirmDelete(int id) async {
+    final authorized = await SecurityUtils.requirePin(context);
+    if (!authorized) return;
+
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

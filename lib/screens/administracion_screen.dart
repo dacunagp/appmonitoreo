@@ -3,6 +3,7 @@ import '../database/database_helper.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/app_drawer.dart';
+import '../utils/security_utils.dart';
 
 class AdministracionScreen extends StatefulWidget {
   const AdministracionScreen({super.key});
@@ -33,7 +34,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 8, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {
@@ -323,7 +324,11 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     );
   }
 
-  void _confirmDelete(int id, String type) {
+  void _confirmDelete(int id, String type) async {
+    final authorized = await SecurityUtils.requirePin(context);
+    if (!authorized) return;
+
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -389,14 +394,11 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             indicatorColor: Colors.white,
             labelStyle: const TextStyle(fontWeight: FontWeight.bold),
             tabs: const [
-              Tab(text: 'Usuarios'),
               Tab(text: 'Métodos'),
               Tab(text: 'Matrices'),
               Tab(text: 'Programas'),
-              Tab(text: 'Estaciones'),
               Tab(text: 'Equipos'),
               Tab(text: 'Parámetros'),
-              Tab(text: 'Endpoints'),
             ],
           ),
         ),
@@ -406,19 +408,16 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             : TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildTabList(_usuarios, 'Usuario'),
                   _buildTabList(_metodos, 'Método'),
                   _buildTabList(_matrices, 'Matriz'),
                   _buildTabList(_programas, 'Programa'),
-                  _buildStationsTab(),
                   _buildEquiposTab(),
                   _buildTabList(_parametros, 'Parámetro'),
-                  _buildTabList(_endpoints, 'Endpoint'),
                 ],
               ),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
-            final types = ['Usuario', 'Método', 'Matriz', 'Programa', 'Estación', 'Equipo', 'Parámetro', 'Endpoint'];
+            final types = ['Método', 'Matriz', 'Programa', 'Equipo', 'Parámetro'];
             _showFormDialog(type: types[_tabController.index]);
           },
           child: const Icon(Icons.add),

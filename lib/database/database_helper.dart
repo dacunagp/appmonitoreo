@@ -327,18 +327,42 @@ class DatabaseHelper {
     await _log('✅ [SCHEMA] Tablas construidas con éxito.');
   }
 
-  Future<void> syncHistoricalData(List<Map<String, dynamic>> parsedData) async {
-    await _log('🔄 [SYNC-HISTORIAL] Iniciando sincronización de historial de mediciones...');
+  Future<void> syncHistoricalData(List<Map<String, dynamic>> parsedData, {int? exactSampleCount}) async {
+    if (parsedData.isEmpty) return;
+    await _log('🔄 [SYNC-HISTORIAL] Iniciando sincronización de ${parsedData.length} registros aplanados...');
     final db = await database;
+
     try {
-      Batch batch = db.batch();
-      for (var row in parsedData) {
-        batch.insert('historial_mediciones', row);
-      }
-      await batch.commit(noResult: true);
-      await _log('✅ [SYNC-HISTORIAL] Éxito. ${parsedData.length} mediciones insertadas.');
+      final Set<String> stationsInBatch = parsedData
+          .map((row) => (row['estacion'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toSet();
+
+      await db.transaction((txn) async {
+        for (final station in stationsInBatch) {
+          await txn.delete(
+            'historial_mediciones',
+            where: 'estacion = ? AND monitoreo_id IS NULL',
+            whereArgs: [station],
+          );
+        }
+
+        final Batch batch = txn.batch();
+        for (var row in parsedData) {
+          batch.insert(
+            'historial_mediciones',
+            row,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+        await batch.commit(noResult: true);
+      });
+
+      final int logCount = exactSampleCount ?? parsedData.length;
+      await _log('✅ [SYNC-HISTORIAL] Éxito. $logCount registros/muestras insertados para la estación.');
     } catch (e) {
-      await _log('❌ [SYNC-HISTORIAL] ERROR CRÍTICO al guardar historial: $e');
+      await _log('❌ [SYNC-HISTORIAL] ERROR CRÍTICO: $e');
+      rethrow;
     }
   }
 
@@ -347,7 +371,8 @@ class DatabaseHelper {
     final List<Map<String, dynamic>> maps = await db.query(
       'historial_mediciones',
       columns: ['valor'],
-      where: 'estacion = ? AND parametro = ?',
+      // Strictly use API-synced records only (monitoreo_id IS NULL = from API download)
+      where: 'estacion = ? AND parametro = ? AND monitoreo_id IS NULL',
       whereArgs: [estacion, parametro],
       orderBy: 'fecha ASC',
     );
@@ -356,9 +381,11 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getHistorialMuestrasByStationName(String stationName) async {
     final db = await database;
+    // Strictly query API-synced records only. monitoreo_id IS NULL means the row came
+    // from a server download, NOT from a local pending monitoring form.
     return await db.query(
       'historial_mediciones',
-      where: 'estacion = ?',
+      where: 'estacion = ? AND monitoreo_id IS NULL',
       whereArgs: [stationName],
       orderBy: 'fecha DESC',
     );
@@ -380,6 +407,68 @@ class DatabaseHelper {
       whereArgs: whereArgs,
       orderBy: 'fecha DESC',
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getHistorialSummary({String? dateFilter}) async {
+    final db = await database;
+    
+    // We enforce the business rule: a valid record must have at least one valid physical/chemical metric.
+    // In our EAV schema, this means selecting dates that have at least one of these parameters.
+    final String validMetricsFilter = '''
+      LOWER(parametro) IN ('caudal', 'ph', 'temperatura', 'conductividad', 'oxigeno', 'sdt', 'turbiedad', 'nivel', 'profundidad')
+      AND valor IS NOT NULL 
+      AND CAST(valor AS TEXT) != ''
+    ''';
+
+    if (dateFilter != null) {
+      return await db.rawQuery('''
+        SELECT 
+          estacion, 
+          COUNT(*) as count,
+          MAX(fecha) as raw_last_date
+        FROM historial_mediciones 
+        WHERE monitoreo_id IS NULL 
+          AND fecha LIKE ?
+          AND $validMetricsFilter
+        GROUP BY estacion
+        ORDER BY estacion ASC
+      ''', ['$dateFilter%']);
+    } else {
+      return await db.rawQuery('''
+        SELECT 
+          estacion, 
+          COUNT(*) as count,
+          MAX(fecha) as raw_last_date
+        FROM historial_mediciones 
+        WHERE monitoreo_id IS NULL
+          AND $validMetricsFilter
+        GROUP BY estacion
+        ORDER BY estacion ASC
+      ''');
+    }
+  }
+
+  Future<void> debugExcludedHistoricalRecords() async {
+    final db = await database;
+    final List<Map<String, dynamic>> excluded = await db.rawQuery('''
+      SELECT estacion, fecha, parametro, valor 
+      FROM historial_mediciones
+      WHERE monitoreo_id IS NULL
+      AND fecha NOT IN (
+        SELECT DISTINCT fecha
+        FROM historial_mediciones
+        WHERE monitoreo_id IS NULL
+        AND LOWER(parametro) IN ('caudal', 'ph', 'temperatura', 'conductividad', 'oxigeno', 'sdt', 'turbiedad', 'nivel', 'profundidad')
+        AND valor IS NOT NULL 
+        AND CAST(valor AS TEXT) != ''
+      )
+      ORDER BY estacion DESC, fecha DESC
+    ''');
+    
+    await _log('🔍 [DEBUG-HISTORIAL] Encontrados ${excluded.length} registros huérfanos/inválidos que no aportan parámetros físicos y fueron filtrados de la UI:');
+    for (var r in excluded) {
+      await _log('   -> EST: ${r['estacion']} | FECHA: ${r['fecha']} | PARAM: ${r['parametro']} | VALOR: ${r['valor']}');
+    }
   }
 
   Future<int> deleteAllHistorialMuestras() async {
@@ -677,6 +766,28 @@ class DatabaseHelper {
       FROM stations s
       LEFT JOIN program_stations ps ON s.id = ps.station_id
       LEFT JOIN programs p ON ps.program_id = p.id
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getDownloadedStationsWithPrograms() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT 
+        s.id, 
+        COALESCE(s.name, 'Sin nombre') AS name, 
+        COALESCE(s.name, 'Sin nombre') AS estacion, 
+        COALESCE(s.latitude, 0.0) AS latitude, 
+        COALESCE(s.latitude, 0.0) AS latitud, 
+        COALESCE(s.longitude, 0.0) AS longitude, 
+        COALESCE(s.longitude, 0.0) AS longitud, 
+        COALESCE(p.id, 0) AS program_id,
+        COALESCE(p.name, 'Sin Programa') AS program_name 
+      FROM stations s
+      INNER JOIN historial_mediciones hm ON s.name = hm.estacion
+      LEFT JOIN program_stations ps ON s.id = ps.station_id
+      LEFT JOIN programs p ON ps.program_id = p.id
+      GROUP BY s.id
+      ORDER BY s.name ASC
     ''');
   }
 
@@ -1113,6 +1224,19 @@ class DatabaseHelper {
       await _log('   Traza: $stacktrace');
       rethrow;
     }
+  }
+
+  Future<int> getDistinctHistoricalSampleCount(String stationName) async {
+    final db = await database;
+    
+    // Count distinct dates for a given station to get the true "Sample/Visit" count
+    final List<Map<String, dynamic>> result = await db.rawQuery('''
+      SELECT COUNT(DISTINCT fecha) as count 
+      FROM historial_muestras 
+      WHERE estacion = ?
+    ''', [stationName]);
+
+    return Sqflite.firstIntValue(result) ?? 0;
   }
 
   // ─── NOTIFICACIONES PUSH ──────────────────────────────────────────────────

@@ -72,13 +72,36 @@ class _SecurityLockScreenState extends State<SecurityLockScreen> {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Seguridad'),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: isDarkMode ? Colors.white : Colors.black,
-      ),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) {
+        if (didPop) return;
+        if (context.mounted) {
+          // Force navigation back to the main screen instead of exiting
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/monitoreos',
+            (route) => false,
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Seguridad'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                '/monitoreos',
+                (route) => false,
+              );
+            },
+          ),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: isDarkMode ? Colors.white : Colors.black,
+        ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32.0),
@@ -153,6 +176,7 @@ class _SecurityLockScreenState extends State<SecurityLockScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

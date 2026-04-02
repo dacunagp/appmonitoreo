@@ -116,17 +116,28 @@ class ApiService {
         // 5. Process Equipos
         if (endpointName.contains('equipo')) {
           final listItems = _asList(decodedBody, 'equipos');
-          // Equipos are grouped by type in the backend usually
           List<Map<String, dynamic>> flatEquipos = [];
-          for (var cat in listItems) {
-            final tipo = cat['tipo'] ?? 'General';
-            final eqs = cat['equipos'] as List? ?? [];
-            for (var eq in eqs) {
+          
+          for (var item in listItems) {
+            // Si el item contiene una lista 'equipos', es el formato antiguo agrupado
+            if (item is Map && item.containsKey('equipos') && item['equipos'] is List) {
+              final tipo = item['tipo'] ?? 'General';
+              final eqs = item['equipos'] as List;
+              for (var eq in eqs) {
+                flatEquipos.add({
+                  'id': eq['id_equipo'] ?? eq['id'] ?? 0,
+                  'codigo': eq['codigo_equipo'] ?? eq['codigo'] ?? 'S/N',
+                  'tipo': tipo,
+                  'id_form_fk': eq['id_form'] ?? eq['id_form_fk'] ?? 0,
+                });
+              }
+            } else {
+              // Formato plano (FastAPI)
               flatEquipos.add({
-                'id': eq['id_equipo'] ?? eq['id'] ?? 0,
-                'codigo': eq['codigo_equipo'] ?? eq['codigo'] ?? 'S/N',
-                'tipo': tipo,
-                'id_form_fk': eq['id_form'] ?? eq['id_form_fk'] ?? 0,
+                'id': item['id_equipo'] ?? item['id'] ?? 0,
+                'codigo': item['codigo_equipo'] ?? item['codigo'] ?? 'S/N',
+                'tipo': item['nombre_parametro'] ?? 'General',
+                'id_form_fk': item['id_form'] ?? item['id_form_fk'] ?? 0,
               });
             }
           }

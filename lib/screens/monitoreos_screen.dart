@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
+import '../utils/security_utils.dart';
 import 'registrar_monitoreo_screen.dart';
 
 class MonitoreosScreen extends StatefulWidget {
@@ -248,7 +249,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                     color: Colors.white),
                               ),
                               confirmDismiss: (direction) async {
-                                final bool confirm = await _verifyDeletionPin();
+                                final bool confirm = await SecurityUtils.requirePin(context);
                                 return confirm;
                               },
                               onDismissed: (direction) async {
@@ -363,7 +364,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   }
 
   Future<void> _deleteSingleRecord(int id) async {
-    final bool isAuthorized = await _verifyDeletionPin();
+    final bool isAuthorized = await SecurityUtils.requirePin(context);
     if (!isAuthorized) return;
 
     try {
@@ -391,7 +392,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
 
   Future<void> _confirmarEliminarTodo(BuildContext context) async {
     // 1. PIN Verification
-    final bool pinCorrecto = await _verifyDeletionPin();
+    final bool pinCorrecto = await SecurityUtils.requirePin(context);
     if (!pinCorrecto) return;
 
     // 2. Standard Final Confirmation
@@ -432,63 +433,6 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
     }
   }
 
-  Future<bool> _verifyDeletionPin() async {
-    final TextEditingController pinController = TextEditingController();
-    final prefs = await SharedPreferences.getInstance();
-    final String correctPin = prefs.getString('deletion_pin') ?? '1234';
-
-    final bool? result = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.lock_person, color: Colors.orange),
-            SizedBox(width: 10),
-            Text('PIN de Seguridad'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Esta acción requiere autorización. Ingrese el PIN de borrado para continuar:'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: pinController,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              obscureText: true,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'PIN de Borrado',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCELAR'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (pinController.text == correctPin) {
-                Navigator.pop(context, true);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('PIN incorrecto'), backgroundColor: Colors.red),
-                );
-              }
-            },
-            child: const Text('VERIFICAR'),
-          ),
-        ],
-      ),
-    );
-
-    return result ?? false;
-  }
 
   Future<void> _exportToCsvAndShare() async {
     ScaffoldMessenger.of(context).showSnackBar(
