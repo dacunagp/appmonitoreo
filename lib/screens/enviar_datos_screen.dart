@@ -204,6 +204,12 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             final Stopwatch recordTimer = Stopwatch()..start();
             debugPrint('⏱️ [TIEMPOS] 🚀 Iniciando envío ${enviosCompletados + 1} de $totalEnvios (ID: ${record['id']})...');
 
+            final List<Map<String, dynamic>> rawDetails = await _dbHelper.getHistorialMedicionesByMonitoreoId(record['id']);
+            final List<Map<String, String>> formattedDetails = rawDetails.map((d) => {
+              "parametro": d['parametro']?.toString() ?? '',
+              "valor": d['valor']?.toString() ?? '0.0',
+            }).toList();
+
             final item = {
               "id": record['id'],
               "device_id": "MOBILE-DATA",
@@ -236,6 +242,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               "foto_path": await _compressAndEncodeImage(record['foto_path']),
               "foto_multiparametro": await _compressAndEncodeImage(record['foto_multiparametro']),
               "foto_turbiedad": await _compressAndEncodeImage(record['foto_turbiedad']),
+              "detalles": formattedDetails, // 🚀 NEW: Attach extra parameters in EAV format
             };
 
             final payload = {"monitoreos": [item]};

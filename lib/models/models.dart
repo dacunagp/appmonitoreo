@@ -236,6 +236,8 @@ class Parametro {
   final String unidad;
   final double? min;
   final double? max;
+  final String? categoria; // [NEW] Phase 93
+  int activo; 
 
   Parametro({
     this.idParametro,
@@ -244,13 +246,14 @@ class Parametro {
     required this.unidad,
     this.min,
     this.max,
+    this.categoria, // [NEW] Phase 93
+    this.activo = 1,
   });
 
   factory Parametro.fromJson(Map<String, dynamic> json) {
     final String rawName = json['nombre_parametro'] ?? json['nombre'] ?? json['parametro'] ?? '';
     final String rawClave = json['clave_interna'] ?? '';
 
-    // Generate a safe internal key if missing (e.g., "pH Agua" -> "ph_agua")
     final String safeClave = rawClave.trim().isNotEmpty
         ? rawClave
         : rawName.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
@@ -262,6 +265,8 @@ class Parametro {
       unidad: json['unidad'] ?? '',
       min: json['min'] != null ? double.tryParse(json['min'].toString()) : null,
       max: json['max'] != null ? double.tryParse(json['max'].toString()) : null,
+      categoria: json['categoria'], // [NEW] Phase 93
+      activo: json['activo'] ?? 1,
     );
   }
 
@@ -272,6 +277,8 @@ class Parametro {
         'unidad': unidad,
         'min': min,
         'max': max,
+        'categoria': categoria, // [NEW] Phase 93
+        'activo': activo,
       };
 
   @override

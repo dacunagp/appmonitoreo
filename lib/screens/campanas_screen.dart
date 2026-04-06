@@ -95,9 +95,14 @@ class _CampanasScreenState extends State<CampanasScreen> {
         final stations = await _dbHelper.getStationsByProgram(programId);
         debugPrint('🔍 [Cambio Programa] ${stations.length} estaciones encontradas.');
         
+        // 🚨 DIAGNOSTIC LOOP: Print first 3 stations to verify coordinate integrity
+        for (int i = 0; i < stations.length && i < 3; i++) {
+          debugPrint('🚨 [COORD-CHECK] Estación ${stations[i].name} -> Lat: ${stations[i].latitude}, Lon: ${stations[i].longitude}');
+        }
+        
         final Map<int, int> statuses = {};
         for (var s in stations) {
-          statuses[s.id] = await _dbHelper.getStationSyncStatus(s.id);
+          statuses[s.id] = await _dbHelper.getStationLatestSyncStatus(s.id);
         }
         setState(() {
           _filteredStations = stations;
@@ -276,53 +281,102 @@ class _CampanasScreenState extends State<CampanasScreen> {
                     debugPrint('❌ [MAPA] Error cargando tile en ${_currentLayerUrl}: $error');
                   },
                 ),
+                // --- ORDEN DE RENDERIZADO (z-index) ---
+                // Para que la estación seleccionada quede siempre arriba, ordenamos una copia de la lista.
                 MarkerLayer(
-                  markers: _filteredStations.map((s) {
-                    final isSelected = s.id == _selectedStationId;
-                    final status = _stationStatuses[s.id] ?? -1;
-                    Color markerColor = Colors.red;
-                    if (status == 2) markerColor = Colors.green;
-                    if (status == 0) markerColor = Colors.orange;
-                    if (isSelected) markerColor = Colors.yellow;
+                  markers: (() {
+                    final sortedStations = List<Station>.from(_filteredStations);
+                    sortedStations.sort((a, b) {
+                      if (a.id == _selectedStationId) return 1;
+                      if (b.id == _selectedStationId) return -1;
+                      return 0;
+                    });
+                    
+                    return sortedStations.map((s) {
+                      final bool isSelected = s.id == _selectedStationId;
+                      final int syncStatus = _stationStatuses[s.id] ?? 0;
+                      
+                      // Standard unselected color
+                      Color markerColor = Colors.red;
 
-                    return Marker(
-                      point: LatLng(
-                        double.parse(s.latitude.toString()), 
-                        double.parse(s.longitude.toString()),
-                      ),
-                      width: 80,
-                      height: 80,
-                      child: GestureDetector(
-                        onTap: () => _showStationDetails(s),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.location_on,
-                              color: markerColor,
-                              size: isSelected ? 45 : 35,
-                              shadows: const [Shadow(blurRadius: 10, color: Colors.black)],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              s.name,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                shadows: [
-                                  Shadow(color: Colors.black, blurRadius: 2.0, offset: Offset(1, 1))
+                      // 🚨 Dynamic color mapping for the SELECTED station only (Phase 81)
+                      if (isSelected) {
+                        switch (syncStatus) {
+                          case 1: // Draft / Yellow
+                            markerColor = Colors.yellowAccent;
+                            break;
+                          case 2: // Sent / Green
+                            markerColor = Colors.green; 
+                            break;
+                          default: // No Record / Grey
+                            markerColor = Colors.grey; 
+                        }
+                      }
+
+                      return Marker(
+                        point: LatLng(
+                          double.parse(s.latitude.toString()), 
+                          double.parse(s.longitude.toString()),
+                        ),
+                        // Wider bounding box for selection
+                        width: isSelected ? 110 : 75,
+                        height: isSelected ? 110 : 75,
+                        child: GestureDetector(
+                          onTap: () => _showStationDetails(s),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // 1. STROKED ICON (Using hard directional shadows)
+                              Icon(
+                                Icons.location_on,
+                                color: markerColor, 
+                                size: isSelected ? 55 : 35, 
+                                shadows: const [
+                                  Shadow(offset: Offset(-1.5, -1.5), color: Colors.black),
+                                  Shadow(offset: Offset(1.5, -1.5), color: Colors.black),
+                                  Shadow(offset: Offset(1.5, 1.5), color: Colors.black),
+                                  Shadow(offset: Offset(-1.5, 1.5), color: Colors.black),
                                 ],
                               ),
-                              textAlign: TextAlign.center,
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ],
+                              const SizedBox(height: 2),
+                              
+                              // 2. STROKED TEXT (Using Stack + Paint)
+                              Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // STROKE (Outer Border)
+                                  Text(
+                                    s.name,
+                                    style: TextStyle(
+                                      fontSize: isSelected ? 16 : 11, // Slightly larger
+                                      fontWeight: FontWeight.w900, // Extra bold
+                                      foreground: Paint()
+                                        ..style = PaintingStyle.stroke
+                                        ..strokeWidth = isSelected ? 3.5 : 2.5
+                                        ..color = Colors.black,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.visible,
+                                  ),
+                                  // FILL (Inner Color)
+                                  Text(
+                                    s.name,
+                                    style: TextStyle(
+                                      fontSize: isSelected ? 16 : 11,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white, // Standard white fill
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.visible,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    });
+                  })().toList(),
                 ),
                 const RichAttributionWidget(
                   attributions: [

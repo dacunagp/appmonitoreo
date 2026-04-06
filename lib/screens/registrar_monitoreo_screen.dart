@@ -68,19 +68,23 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   Metodo? _metodoSeleccionado;
 
   // Controllers para inputs numéricos y texto
-  final TextEditingController _tempController = TextEditingController();
-  final TextEditingController _phController = TextEditingController();
-  final TextEditingController _condController = TextEditingController();
-  final TextEditingController _oxigenoController = TextEditingController();
-  final TextEditingController _turbiedadController = TextEditingController();
   final TextEditingController _codLabController = TextEditingController();
   final TextEditingController _obsController = TextEditingController();
-  final TextEditingController _profundidadController = TextEditingController();
-  final TextEditingController _nivelTerrenoController = TextEditingController();
+  
+  // DYNAMIC PARAMETER MANAGEMENT (Phase 94)
+  final Map<String, TextEditingController> _paramControllers = {};
+  Map<String, List<Parametro>> _categorizedParams = {};
+  Set<String> _activeParameterKeys = {};
+  
+  // DYNAMIC PARAMETERS (Legacy Phase 75, now integrated into Phase 94)
+  List<Parametro> _availableExtraParams = []; // Catalog for manual addition
+  List<Parametro> _selectedExtraParams = [];  // Manually added by user
+  
+  // LEVEL VARIABLES
   String? _equipoNivelSeleccionado;
   String? _tipoNivelPozoSeleccionado;
   DateTime? _fechaYHoraNivel;
-  
+
   // STATISTICAL VALIDATION
   bool _hasHistory = false;
   Map<String, Map<String, double?>> _parameterRanges = {};
@@ -98,16 +102,24 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
   bool get _isMultiparametroComplete {
     if (_equipoMultiparametroSeleccionado == null) return false;
-    return _tempController.text.isNotEmpty &&
-        _phController.text.isNotEmpty &&
-        _condController.text.isNotEmpty &&
-        _oxigenoController.text.isNotEmpty &&
-        _fotoMultiparametroPath != null;
+    return (_paramControllers['temperatura']?.text.isNotEmpty ?? false) &&
+           (_paramControllers['ph']?.text.isNotEmpty ?? false) &&
+           (_paramControllers['conductividad']?.text.isNotEmpty ?? false) &&
+           (_paramControllers['oxigeno']?.text.isNotEmpty ?? false) &&
+           _fotoMultiparametroPath != null;
   }
 
   bool get _isTurbiedadComplete {
     if (_turbidimetroSeleccionado == null) return false;
-    return _turbiedadController.text.isNotEmpty && _fotoTurbiedadPath != null;
+    return (_paramControllers['turbiedad']?.text.isNotEmpty ?? false) && 
+           _fotoTurbiedadPath != null;
+  }
+
+  bool get _isNivelComplete {
+    return _equipoNivelSeleccionado != null && 
+           _tipoNivelPozoSeleccionado != null && 
+           (_paramControllers['nivel']?.text.isNotEmpty ?? false) && 
+           _fechaYHoraNivel != null;
   }
 
   bool get _isMuestreoComplete {
@@ -127,15 +139,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     _loadDropdownData();
     
     // Add listeners for auto-save
-    _tempController.addListener(_onFieldChanged);
-    _phController.addListener(_onFieldChanged);
-    _condController.addListener(_onFieldChanged);
-    _oxigenoController.addListener(_onFieldChanged);
-    _turbiedadController.addListener(_onFieldChanged);
     _codLabController.addListener(_onFieldChanged);
     _obsController.addListener(_onFieldChanged);
-    _profundidadController.addListener(_onFieldChanged);
-    _nivelTerrenoController.addListener(_onFieldChanged);
   }
 
   void _onFieldChanged() {
@@ -194,13 +199,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'fecha_hora_nivel': _fechaYHoraNivel?.toIso8601String(),
         'latitud': _estacionLatitud,
         'longitud': _estacionLongitud,
-        'temperatura': double.tryParse(_tempController.text),
-        'ph': double.tryParse(_phController.text),
-        'conductividad': double.tryParse(_condController.text),
-        'oxigeno': double.tryParse(_oxigenoController.text),
-        'turbiedad': double.tryParse(_turbiedadController.text),
-        'profundidad': double.tryParse(_profundidadController.text),
-        'nivel': double.tryParse(_nivelTerrenoController.text),
+        'temperatura': double.tryParse(_paramControllers['temperatura']?.text ?? ''),
+        'ph': double.tryParse(_paramControllers['ph']?.text ?? ''),
+        'conductividad': double.tryParse(_paramControllers['conductividad']?.text ?? ''),
+        'oxigeno': double.tryParse(_paramControllers['oxigeno']?.text ?? ''),
+        'turbiedad': double.tryParse(_paramControllers['turbiedad']?.text ?? ''),
+        'profundidad': double.tryParse(_paramControllers['profundidad']?.text ?? ''),
+        'nivel': double.tryParse(_paramControllers['nivel']?.text ?? ''),
         'is_draft': isDraft ? 1 : 0,
       };
 
@@ -208,9 +213,23 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       if (header['id'] == null) {
         header.remove('id');
       }
+      // 2. Build Details List (Parameters that are NOT in hardcoded columns)
+      final hardcodedCols = ['temperatura', 'ph', 'conductividad', 'oxigeno', 'turbiedad', 'profundidad', 'nivel'];
+      
+      List<Map<String, dynamic>> detalles = _paramControllers.entries
+        .where((entry) => !hardcodedCols.contains(entry.key))
+        .map((entry) {
+          return {
+            'parametro': entry.key,
+            'valor': double.tryParse(entry.value.text),
+          };
+        })
+        .where((d) => d['valor'] != null)
+        .toList();
+      
+      // Cleanup: _selectedExtraParams logic is mostly superseeded by category-based UI
+      // but we keep it for backward compat if the user manually added something unconventional.
 
-      // 2. Build Details List (Parameters) - Empty as we now use flattened schema
-      List<Map<String, dynamic>> detalles = [];
 
       // 3. Save via Transaction
       final id = await _dbHelper.saveMonitoreoTransaction(header, detalles);
@@ -235,15 +254,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _tempController.dispose();
-    _phController.dispose();
-    _condController.dispose();
-    _oxigenoController.dispose();
-    _turbiedadController.dispose();
     _codLabController.dispose();
     _obsController.dispose();
-    _profundidadController.dispose();
-    _nivelTerrenoController.dispose();
+    
+    for (var controller in _paramControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -261,6 +277,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         turbiData = await _dbHelper.getEquiposByType('Turbidimetro');
       }
 
+      // 1. Fetch ALL parameters (catalog)
+      final allParams = await _dbHelper.getParametros();
+      
+      // 2. Fetch ACTIVE parameters for dynamic UI filtering
+      final activeParams = await _dbHelper.getActiveParametros();
+      
       setState(() {
         _programas = programas;
         _matrices = matrices;
@@ -272,7 +294,30 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         
         _turbidimetros = turbiData;
         _turbidimetrosOptions = turbiData.map((e) => e.codigo.toString()).toList();
+
+        // Phase 94: Group and Initialize Dynamic Controllers
+        _activeParameterKeys = activeParams.map((p) => p.claveInterna).toSet();
+        _categorizedParams = {};
         
+        for (var p in activeParams) {
+          final cat = p.categoria ?? 'Parámetros Adicionales';
+          if (!_categorizedParams.containsKey(cat)) {
+            _categorizedParams[cat] = [];
+          }
+          _categorizedParams[cat]!.add(p);
+          
+          // Ensure controller exists and has listener
+          if (!_paramControllers.containsKey(p.claveInterna)) {
+            final controller = TextEditingController();
+            controller.addListener(_onFieldChanged);
+            _paramControllers[p.claveInterna] = controller;
+          }
+        }
+
+        // Available extras (parameters NOT categorized as main groups)
+        final mainCategories = ['Multiparámetro', 'Turbiedad', 'Nivel Freático'];
+        _availableExtraParams = allParams.where((p) => !mainCategories.contains(p.categoria)).toList();
+
         _isLoading = false;
       });
 
@@ -354,13 +399,13 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       }
 
       // 4. Flattened Loading: Load parameters directly from data map
-      _tempController.text = data['temperatura']?.toString() ?? '';
-      _phController.text = data['ph']?.toString() ?? '';
-      _condController.text = data['conductividad']?.toString() ?? '';
-      _oxigenoController.text = data['oxigeno']?.toString() ?? '';
-      _turbiedadController.text = data['turbiedad']?.toString() ?? '';
-      _profundidadController.text = data['profundidad']?.toString() ?? '';
-      _nivelTerrenoController.text = data['nivel']?.toString() ?? '';
+      _paramControllers['temperatura']?.text = data['temperatura']?.toString() ?? '';
+      _paramControllers['ph']?.text = data['ph']?.toString() ?? '';
+      _paramControllers['conductividad']?.text = data['conductividad']?.toString() ?? '';
+      _paramControllers['oxigeno']?.text = data['oxigeno']?.toString() ?? '';
+      _paramControllers['turbiedad']?.text = data['turbiedad']?.toString() ?? '';
+      _paramControllers['profundidad']?.text = data['profundidad']?.toString() ?? '';
+      _paramControllers['nivel']?.text = data['nivel']?.toString() ?? '';
       _estacionLatitud = data['latitud'];
       _estacionLongitud = data['longitud'];
 
@@ -368,6 +413,42 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       _fotoMultiparametroPath = data['foto_multiparametro'];
       _fotoTurbiedadPath = data['foto_turbiedad'];
     });
+
+    // 5. Load Extra Parameters (Phase 75/94)
+    final savedExtras = await _dbHelper.getHistorialMedicionesByMonitoreoId(id);
+    if (savedExtras.isNotEmpty) {
+      final allParams = await _dbHelper.getParametros();
+      final mainCategories = ['Multiparámetro', 'Turbiedad', 'Nivel Freático'];
+      
+      for (var row in savedExtras) {
+        final key = row['parametro'];
+        final valor = row['valor'];
+        try {
+          final p = allParams.firstWhere((param) => param.claveInterna == key);
+          
+          // Set values in controllers
+          if (_paramControllers.containsKey(key)) {
+            _paramControllers[key]!.text = valor?.toString() ?? '';
+          } else {
+            // Parameter was saved but is not currently active in categorizedParams
+            final controller = TextEditingController(text: valor?.toString() ?? '');
+            controller.addListener(_onFieldChanged);
+            setState(() {
+              _paramControllers[key] = controller;
+            });
+          }
+
+          // If it's an "Additional" parameter (not main category), add it to _selectedExtraParams to show it in UI
+          if (!mainCategories.contains(p.categoria)) {
+            setState(() {
+              if (!_selectedExtraParams.any((item) => item.claveInterna == key)) {
+                _selectedExtraParams.add(p);
+              }
+            });
+          }
+        } catch (_) {}
+      }
+    }
 
     // Special case: Load stations if program is selected
     if (_programaSeleccionado != null) {
@@ -602,7 +683,33 @@ _equipoMultiparametroSeleccionado = eq.codigo;
 
       appBar: AppBar(
         title: const Text('Registrar Monitoreo'),
-        actions: [IconButton(icon: const Icon(Icons.more_vert), onPressed: () {})],
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'admin_params') {
+                // Force save draft before leaving
+                await _saveAsDraft();
+                if (!mounted) return;
+                // Pass the tab index for 'Parámetros' (index 4)
+                Navigator.pushNamed(context, '/administracion', arguments: {'initialTab': 4}); 
+              }
+            },
+            itemBuilder: (BuildContext context) {
+              return [
+                const PopupMenuItem<String>(
+                  value: 'admin_params',
+                  child: Row(
+                    children: [
+                      Icon(Icons.settings_input_component, color: Colors.blueAccent),
+                      SizedBox(width: 8),
+                      Text('Administrar Parámetros'),
+                    ],
+                  ),
+                ),
+              ];
+            },
+          ),
+        ],
       ),
       drawer: const AppDrawer(currentRoute: '/registrar_monitoreo'),
       body: ListView(
@@ -651,7 +758,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
             _buildSectionTile(
               'Nivel Freático',
               isDarkMode,
-              _equipoNivelSeleccionado != null && _tipoNivelPozoSeleccionado != null && _nivelTerrenoController.text.isNotEmpty && _fechaYHoraNivel != null,
+              _isNivelComplete,
               [
                 IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
                   label: 'Equipo Nivel',
@@ -671,19 +778,22 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   isDarkMode: isDarkMode,
                   onChanged: (val) => setState(() => _tipoNivelPozoSeleccionado = val),
                 )),
-                CustomParametroInputRow(
-                  isReadOnly: widget.isReadOnly,
-                  label: 'Nivel Terreno [m.bnb]',
-                  hintText: 'Ingrese nivel terreno',
-                  isDarkMode: isDarkMode,
-                  controller: _nivelTerrenoController,
-                  parameterKey: 'nivel',
-                  selectedEstacion: _estacionSeleccionada?.name ?? '',
-                  hasHistory: _hasHistory,
-                  minAllowed: _parameterRanges['nivel']?['min'],
-                  maxAllowed: _parameterRanges['nivel']?['max'],
-                  onPulseTap: () => _navigateToChart('nivel', _nivelTerrenoController),
-                ),
+                ...(_categorizedParams['Nivel Freático'] ?? []).map((p) => Visibility(
+                  visible: _activeParameterKeys.contains(p.claveInterna),
+                  child: CustomParametroInputRow(
+                    isReadOnly: widget.isReadOnly,
+                    label: '${p.nombreParametro} [${p.unidad}]',
+                    hintText: 'Ingrese ${p.nombreParametro}',
+                    isDarkMode: isDarkMode,
+                    controller: _paramControllers[p.claveInterna]!,
+                    parameterKey: p.claveInterna,
+                    selectedEstacion: _estacionSeleccionada?.name ?? '',
+                    hasHistory: _hasHistory,
+                    minAllowed: _parameterRanges[p.claveInterna]?['min'],
+                    maxAllowed: _parameterRanges[p.claveInterna]?['max'],
+                    onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
+                  ),
+                )).toList(),
                 IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
                   label: 'Hora Medición - Nivel',
                   value: _fechaYHoraNivel == null ? 'Seleccione Hora y Fecha' : _formatearFechaYHora(_fechaYHoraNivel!),
@@ -691,8 +801,17 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   showArrow: false,
                   isDarkMode: isDarkMode,
                   onTap: () async {
+                    final now = DateTime.now();
+                    final today = DateTime(now.year, now.month, now.day);
+                    final initial = _fechaYHoraNivel ?? now;
+                    // Safe logic: Today or the existing past date if it's a draft
+                    final safeFirstDate = initial.isBefore(today) ? initial : today;
+
                     final DateTime? fecha = await showDatePicker(
-                      context: context, initialDate: _fechaYHoraNivel ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100)
+                      context: context, 
+                      initialDate: initial, 
+                      firstDate: safeFirstDate, 
+                      lastDate: DateTime(2100)
                     );
                     if (!mounted || fecha == null) return;
                     final TimeOfDay? hora = await showTimePicker(
@@ -722,10 +841,22 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                 onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
               )),
               if (_equipoMultiparametroSeleccionado != null) ...[
-                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'Temperatura [°C]', hintText: 'Ingrese Temperatura', isDarkMode: isDarkMode, controller: _tempController, parameterKey: 'temperatura', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['temperatura']?['min'], maxAllowed: _parameterRanges['temperatura']?['max'], onPulseTap: () => _navigateToChart('temperatura', _tempController)),
-                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'pH [u.pH]', hintText: 'Ingrese pH', isDarkMode: isDarkMode, controller: _phController, parameterKey: 'ph', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['ph']?['min'], maxAllowed: _parameterRanges['ph']?['max'], onPulseTap: () => _navigateToChart('ph', _phController)),
-                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'Conductividad [µS/cm]', hintText: 'Ingrese conductividad', isDarkMode: isDarkMode, controller: _condController, parameterKey: 'conductividad', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['conductividad']?['min'], maxAllowed: _parameterRanges['conductividad']?['max'], onPulseTap: () => _navigateToChart('conductividad', _condController)),
-                CustomParametroInputRow(isReadOnly: widget.isReadOnly, label: 'Oxigeno Disuelto [mg/l]', hintText: 'Ingrese oxigeno disuelto', isDarkMode: isDarkMode, controller: _oxigenoController, parameterKey: 'oxigeno', selectedEstacion: _estacionSeleccionada?.name ?? '', hasHistory: _hasHistory, minAllowed: _parameterRanges['oxigeno']?['min'], maxAllowed: _parameterRanges['oxigeno']?['max'], onPulseTap: () => _navigateToChart('oxigeno', _oxigenoController)),
+                ...(_categorizedParams['Multiparámetro'] ?? []).map((p) => Visibility(
+                  visible: _activeParameterKeys.contains(p.claveInterna),
+                  child: CustomParametroInputRow(
+                    isReadOnly: widget.isReadOnly,
+                    label: '${p.nombreParametro} [${p.unidad}]',
+                    hintText: 'Ingrese ${p.nombreParametro}',
+                    isDarkMode: isDarkMode,
+                    controller: _paramControllers[p.claveInterna]!,
+                    parameterKey: p.claveInterna,
+                    selectedEstacion: _estacionSeleccionada?.name ?? '',
+                    hasHistory: _hasHistory,
+                    minAllowed: _parameterRanges[p.claveInterna]?['min'],
+                    maxAllowed: _parameterRanges[p.claveInterna]?['max'],
+                    onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
+                  ),
+                )).toList(),
                 IgnorePointer(ignoring: widget.isReadOnly, child: _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA MULTIPARÁMETRO',
                   path: _fotoMultiparametroPath,
@@ -739,6 +870,61 @@ _equipoMultiparametroSeleccionado = eq.codigo;
               const SizedBox(height: 16),
             ]),
 
+            // --- SECCIÓN 4: PARÁMETROS ADICIONALES (Manual picking - Phase 94 Refinement) ---
+            _buildSectionTile('Parámetros Adicionales', isDarkMode, true, [
+              // Only show manually selected or saved extra params
+              ..._selectedExtraParams.map((p) => Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: CustomParametroInputRow(
+                        isReadOnly: widget.isReadOnly,
+                        label: '${p.nombreParametro} [${p.unidad}]',
+                        hintText: 'Ingrese valor',
+                        isDarkMode: isDarkMode,
+                        controller: _paramControllers[p.claveInterna]!,
+                        parameterKey: p.claveInterna,
+                        selectedEstacion: _estacionSeleccionada?.name ?? '',
+                        hasHistory: _hasHistory,
+                        minAllowed: _parameterRanges[p.claveInterna]?['min'],
+                        maxAllowed: _parameterRanges[p.claveInterna]?['max'],
+                        onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
+                      ),
+                    ),
+                    if (!widget.isReadOnly)
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                        onPressed: () => _removeExtraParameter(p),
+                      ),
+                  ],
+                ),
+              )),
+              if (!widget.isReadOnly)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _showAddParameterBottomSheet,
+                      icon: const Icon(Icons.add, color: Colors.white, size: 20),
+                      label: const Text(
+                        "AGREGAR OTRO PARÁMETRO", 
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ], leadingIcon: Icons.add_chart),
+
             // --- SECCIÓN 3: TURBIEDAD ---
             _buildSectionTile('Turbiedad', isDarkMode, _isTurbiedadComplete, [
                 IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
@@ -751,32 +937,34 @@ _equipoMultiparametroSeleccionado = eq.codigo;
                   onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
                 )),
                 if (_turbidimetroSeleccionado != null) ...[
-                  CustomParametroInputRow(
-                    isReadOnly: widget.isReadOnly,
-                  label: 'Turbiedad [NTU]',
-                  hintText: 'Ingrese turbiedad',
-                  isDarkMode: isDarkMode,
-                  controller: _turbiedadController,
-                  parameterKey: 'turbiedad',
-                  selectedEstacion: _estacionSeleccionada?.name ?? '',
-                  hasHistory: _hasHistory,
-                  minAllowed: _parameterRanges['turbiedad']?['min'],
-                  maxAllowed: _parameterRanges['turbiedad']?['max'],
-                  showPulseIcon: false, // 🚨 Hide the chart icon
-                  bypassValidation: true, // 🚨 CRITICAL: Force green check for valid numbers
-                  onPulseTap: () => _navigateToChart('turbiedad', _turbiedadController),
-                ),
-                IgnorePointer(ignoring: widget.isReadOnly, child: _buildEquipmentPhotoFullPreview(
-                  title: 'EVIDENCIA TURBIEDAD',
-                  path: _fotoTurbiedadPath,
-                  isProcessing: _isProcessingTurb,
-                  onTomarFoto: _tomarFotoTurbiedad,
-                  onClear: () => setState(() => _fotoTurbiedadPath = null),
-                  onVerificar: () => _sharePhoto(_fotoTurbiedadPath!),
-                  isDarkMode: isDarkMode,
-                )),
-              ],
-              const SizedBox(height: 16),
+                  ...(_categorizedParams['Turbiedad'] ?? []).map((p) => Visibility(
+                    visible: _activeParameterKeys.contains(p.claveInterna),
+                    child: CustomParametroInputRow(
+                      isReadOnly: widget.isReadOnly,
+                      label: '${p.nombreParametro} [${p.unidad}]',
+                      hintText: 'Ingrese ${p.nombreParametro}',
+                      isDarkMode: isDarkMode,
+                      controller: _paramControllers[p.claveInterna]!,
+                      parameterKey: p.claveInterna,
+                      selectedEstacion: _estacionSeleccionada?.name ?? '',
+                      hasHistory: _hasHistory,
+                      minAllowed: _parameterRanges[p.claveInterna]?['min'],
+                      maxAllowed: _parameterRanges[p.claveInterna]?['max'],
+                      bypassValidation: true,
+                      onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
+                    ),
+                  )).toList(),
+                  IgnorePointer(ignoring: widget.isReadOnly, child: _buildEquipmentPhotoFullPreview(
+                    title: 'EVIDENCIA TURBIEDAD',
+                    path: _fotoTurbiedadPath,
+                    isProcessing: _isProcessingTurb,
+                    onTomarFoto: _tomarFotoTurbiedad,
+                    onClear: () => setState(() => _fotoTurbiedadPath = null),
+                    onVerificar: () => _sharePhoto(_fotoTurbiedadPath!),
+                    isDarkMode: isDarkMode,
+                  )),
+                ],
+                const SizedBox(height: 16),
             ]),
             
             // --- SECCIÓN 4: MUESTREO ---
@@ -994,24 +1182,25 @@ _equipoMultiparametroSeleccionado = eq.codigo;
             onTap: _seleccionarFechaYHora, 
           ),
           
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: CustomParametroInputRow(
-              label: 'Profundidad de muestreo [m]', 
-              hintText: 'Ingrese profundidad', 
-              isDarkMode: isDarkMode, 
-              controller: _profundidadController,
-              parameterKey: 'profundidad',
-              selectedEstacion: _estacionSeleccionada?.name ?? '',
-              showLeadingIcon: true,
-              showPulseIcon: false,
-              isMandatory: true,
-              hasHistory: _hasHistory,
-              minAllowed: _parameterRanges['profundidad']?['min'],
-              maxAllowed: _parameterRanges['profundidad']?['max'],
-              bypassValidation: true, // 🚨 CRITICAL: Force green check for valid numbers
+          if (_activeParameterKeys.contains('profundidad'))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: CustomParametroInputRow(
+                label: 'Profundidad de muestreo [m]', 
+                hintText: 'Ingrese profundidad', 
+                isDarkMode: isDarkMode, 
+                controller: _paramControllers['profundidad']!,
+                parameterKey: 'profundidad',
+                selectedEstacion: _estacionSeleccionada?.name ?? '',
+                showLeadingIcon: true,
+                showPulseIcon: false,
+                isMandatory: true,
+                hasHistory: _hasHistory,
+                minAllowed: _parameterRanges['profundidad']?['min'],
+                maxAllowed: _parameterRanges['profundidad']?['max'],
+                bypassValidation: true, // 🚨 CRITICAL: Force green check for valid numbers
+              ),
             ),
-          ),
           
           CustomFormRow(
             label: 'Monitoreo Fallido',
@@ -1253,9 +1442,10 @@ _equipoMultiparametroSeleccionado = eq.codigo;
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Se requiere GPS para estampar la fotografía.')),
+              const SnackBar(content: Text('⚠️ Se guardará la foto sin estampa (GPS no disponible)')),
             );
           }
+          await _savePhotoWithoutStamp(File(pickerImage.path), target);
         }
       }
     } catch (e) {
@@ -1274,7 +1464,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       if (position != null) {
         await _processImageWithStamp(File(image.path), position, target: 'multi');
       } else {
-        setState(() => _fotoMultiparametroPath = image.path);
+        await _savePhotoWithoutStamp(File(image.path), 'multi');
       }
     }
   }
@@ -1286,7 +1476,7 @@ _equipoMultiparametroSeleccionado = eq.codigo;
       if (position != null) {
         await _processImageWithStamp(File(image.path), position, target: 'turb');
       } else {
-        setState(() => _fotoTurbiedadPath = image.path);
+        await _savePhotoWithoutStamp(File(image.path), 'turb');
       }
     }
   }
@@ -1440,10 +1630,63 @@ _equipoMultiparametroSeleccionado = eq.codigo;
         else if (target == 'multi') _fotoMultiparametroPath = filePath;
         else if (target == 'turb') _fotoTurbiedadPath = filePath;
       });
+      // 🚨 PERSISTENCE FIX: Trigger draft save immediately after photo processing
+      await _saveAsDraft();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al procesar foto: $e')));
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (target == 'general') _isProcessingImage = false;
+          else if (target == 'multi') _isProcessingMulti = false;
+          else if (target == 'turb') _isProcessingTurb = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _savePhotoWithoutStamp(File tempFile, String target) async {
+    if (target == 'general') setState(() => _isProcessingImage = true);
+    else if (target == 'multi') setState(() => _isProcessingMulti = true);
+    else if (target == 'turb') setState(() => _isProcessingTurb = true);
+
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final String fileName = 'EVIDENCIA_RAW_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final String filePath = p.join(directory.path, fileName);
+      
+      // Read bytes from temp file
+      final Uint8List bytes = await tempFile.readAsBytes();
+
+      // Compress even without stamp for consistency
+      final Uint8List? compressedBytes = await FlutterImageCompress.compressWithList(
+        bytes,
+        minWidth: 800,
+        minHeight: 800,
+        quality: 70,
+      );
+
+      final File processedFile = File(filePath);
+      if (compressedBytes != null) {
+        await processedFile.writeAsBytes(compressedBytes);
+        debugPrint('✅ Imagen RAW comprimida guardada: ${(compressedBytes.length / 1024).toStringAsFixed(2)} KB');
+      } else {
+        await tempFile.copy(filePath);
+        debugPrint('⚠️ Falló compresión RAW, copiando original');
+      }
+
+      setState(() {
+        if (target == 'general') _imagePath = filePath;
+        else if (target == 'multi') _fotoMultiparametroPath = filePath;
+        else if (target == 'turb') _fotoTurbiedadPath = filePath;
+      });
+      
+      // 🚨 PERSISTENCE FIX: Trigger draft save
+      await _saveAsDraft();
+    } catch (e) {
+      debugPrint('Error saving photo without stamp: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -1667,13 +1910,23 @@ _equipoMultiparametroSeleccionado = eq.codigo;
   }
 
   Future<void> _seleccionarFechaYHora() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final initial = _fechaYHoraMuestreo ?? now;
+    // Prevent crash if an old draft is loaded with a past date
+    final safeFirstDate = initial.isBefore(today) ? initial : today;
+
     final DateTime? fecha = await showDatePicker(
-      context: context, initialDate: _fechaYHoraMuestreo ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100)
+      context: context, 
+      initialDate: initial, 
+      firstDate: safeFirstDate, 
+      lastDate: DateTime(2100)
     );
     if (!mounted || fecha == null) return;
 
     final TimeOfDay? hora = await showTimePicker(
-      context: context, initialTime: _fechaYHoraMuestreo != null ? TimeOfDay.fromDateTime(_fechaYHoraMuestreo!) : TimeOfDay.now()
+      context: context, 
+      initialTime: _fechaYHoraMuestreo != null ? TimeOfDay.fromDateTime(_fechaYHoraMuestreo!) : TimeOfDay.now()
     );
     if (!mounted || hora == null) return;
 
@@ -1681,6 +1934,75 @@ _equipoMultiparametroSeleccionado = eq.codigo;
   }
 
   String _formatearFechaYHora(DateTime f) => '${f.day.toString().padLeft(2,'0')}/${f.month.toString().padLeft(2,'0')}/${f.year} ${f.hour.toString().padLeft(2,'0')}:${f.minute.toString().padLeft(2,'0')}';
+
+  // --- DYNAMIC PARAMETER LOGIC (Phase 75/94) ---
+  void _removeExtraParameter(Parametro p) {
+    setState(() {
+      _selectedExtraParams.removeWhere((item) => item.claveInterna == p.claveInterna);
+      // We only dispose/remove if it's NOT in the categorized active list
+      final isInCategories = _categorizedParams.values.any((list) => list.any((item) => item.claveInterna == p.claveInterna));
+      if (!isInCategories) {
+        _paramControllers[p.claveInterna]?.dispose();
+        _paramControllers.remove(p.claveInterna);
+      } else {
+        // Just clear text if it's a standard active param
+        _paramControllers[p.claveInterna]?.clear();
+      }
+    });
+    _saveAsDraft();
+  }
+
+  void _showAddParameterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        // Show parameters that are NOT in the main categories and NOT already selected
+        final remaining = _availableExtraParams.where((p) => 
+          !_selectedExtraParams.any((item) => item.claveInterna == p.claveInterna)
+        ).toList();
+        
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Seleccionar Parámetro', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              if (remaining.isEmpty)
+                const Center(child: Padding(padding: EdgeInsets.all(20), child: Text('No hay más parámetros disponibles.')))
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: remaining.length,
+                    itemBuilder: (context, index) {
+                      final p = remaining[index];
+                      return ListTile(
+                        title: Text(p.nombreParametro),
+                        subtitle: Text('Unidad: ${p.unidad}'),
+                        onTap: () {
+                          final controller = TextEditingController();
+                          controller.addListener(_onFieldChanged);
+                          setState(() {
+                            _selectedExtraParams.add(p);
+                            _paramControllers[p.claveInterna] = controller;
+                          });
+                          Navigator.pop(context);
+                          _saveAsDraft();
+                        },
+                        trailing: const Icon(Icons.add_circle_outline, color: Colors.blueAccent),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Future<bool?> _mostrarDialogoSiNo(String titulo, bool? valorActual) async {
     bool? tempValue = valorActual;
@@ -1917,6 +2239,7 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
     widget.controller.addListener(_validate);
     _validate();
   }
+
 
   @override
   void didUpdateWidget(CustomParametroInputRow oldWidget) {

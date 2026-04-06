@@ -46,6 +46,25 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    if (args != null && args.containsKey('initialTab')) {
+      final int initialIndex = args['initialTab'];
+      if (_tabController.index != initialIndex) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _tabController.animateTo(initialIndex);
+            // Clear arguments once used to prevent re-triggering on rebuild
+            ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?; // Just a dummy read
+          }
+        });
+      }
+    }
+  }
+
+
+  @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
@@ -122,6 +141,9 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     int? selectedProgramId;
     int? selectedTipoId;
 
+    String? selectedCategoria;
+    final List<String> categories = ['Multiparámetro', 'Parámetros Adicionales', 'Nivel Freático', 'Turbiedad'];
+
     if (isEdit) {
       if (type == 'Usuario') {
         c1.text = (item as Usuario).nombre;
@@ -141,11 +163,19 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         c1.text = item['codigo'];
         selectedTipoId = item['id_form_fk'];
       } else if (type == 'Parámetro') {
-        c1.text = (item as Parametro).nombreParametro;
-        _claveController.text = item.claveInterna;
-        _unidadController.text = item.unidad;
-        _minController.text = item.min?.toString() ?? '';
-        _maxController.text = item.max?.toString() ?? '';
+        final p = item as Parametro;
+        c1.text = p.nombreParametro;
+        _claveController.text = p.claveInterna;
+        _unidadController.text = p.unidad;
+        _minController.text = p.min?.toString() ?? '';
+        _maxController.text = p.max?.toString() ?? '';
+        
+        // [NEW] Safety check for legacy or invalid categories
+        if (p.categoria != null && categories.contains(p.categoria)) {
+          selectedCategoria = p.categoria;
+        } else {
+          selectedCategoria = null; // Force user to pick a valid one
+        }
       } else if (type == 'Endpoint') {
         c1.text = item['nombre'] ?? '';
       }
@@ -191,6 +221,14 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   ),
                 ] else if (type == 'Parámetro') ...[
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre Parámetro')),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: selectedCategoria,
+                    decoration: const InputDecoration(labelText: 'Categoría'),
+                    items: categories.map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
+                    onChanged: (val) => setDialogState(() => selectedCategoria = val),
+                  ),
+                  const SizedBox(height: 8),
                   const SizedBox(height: 8),
                   Visibility(
                     visible: !isEdit,
@@ -254,9 +292,9 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                     return;
                   }
                 } else if (type == 'Parámetro') {
-                  if (c1.text.trim().isEmpty || _claveController.text.trim().isEmpty || _unidadController.text.trim().isEmpty) {
+                  if (c1.text.trim().isEmpty || _claveController.text.trim().isEmpty || _unidadController.text.trim().isEmpty || selectedCategoria == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Por favor, rellene todos los campos (Nombre, Clave Interna y Unidad).'), backgroundColor: Colors.redAccent),
+                      const SnackBar(content: Text('Por favor, rellene todos los campos, incluyendo la Categoría.'), backgroundColor: Colors.redAccent),
                     );
                     return;
                   }
@@ -303,6 +341,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       unidad: _unidadController.text.trim(),
                       min: double.tryParse(_minController.text.trim()),
                       max: double.tryParse(_maxController.text.trim()),
+                      categoria: selectedCategoria,
                     );
                     isEdit ? await _dbHelper.updateParametro(p) : await _dbHelper.addParametro(p);
                   } else if (type == 'Endpoint') {
@@ -492,7 +531,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 id = item.id;
               } else if (type == 'Parámetro') {
                 title = item.nombreParametro;
-                subtitle = '';
+                subtitle = item.categoria ?? 'Sin Categoría';
                 id = item.idParametro;
               } else if (type == 'Endpoint') {
                 title = item['nombre'] ?? 'S/N';
@@ -501,11 +540,22 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               }
 
               return ListTile(
-                title: Text(title, textAlign: TextAlign.left),
+                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold), textAlign: TextAlign.left),
                 subtitle: subtitle.isNotEmpty ? Text(subtitle, textAlign: TextAlign.left) : null,
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (type == 'Parámetro')
+                      Switch(
+                        value: (item as Parametro).activo == 1,
+                        activeColor: Colors.greenAccent,
+                        onChanged: (bool value) async {
+                          await _dbHelper.toggleParametroStatus(id, value);
+                          setState(() {
+                            item.activo = value ? 1 : 0;
+                          });
+                        },
+                      ),
                     IconButton(
                         icon: const Icon(Icons.edit, color: Colors.blue),
                         onPressed: () {
@@ -666,5 +716,23 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         ),
       ],
     );
+  }
+
+  String _getUbicacionParametro(String nombre) {
+    final lowerName = nombre.toLowerCase();
+    if (lowerName.contains('temperatura') || 
+        lowerName.contains('ph') || 
+        lowerName.contains('conductividad') || 
+        lowerName.contains('oxigeno')) {
+      return 'Registrar Monitoreo - Multiparámetro';
+    } else if (lowerName.contains('turbiedad')) {
+      return 'Registrar Monitoreo - Turbiedad';
+    } else if (lowerName.contains('nivel')) {
+      return 'Registrar Monitoreo - Nivel Freático';
+    } else if (lowerName.contains('profundidad')) {
+      return 'Registrar Monitoreo - Datos de Monitoreo';
+    }
+    // Fallback for parameters not currently mapped in the UI (e.g., Uranio, Caudal)
+    return 'Registrar Monitoreo - Parámetros Adicionales';
   }
 }

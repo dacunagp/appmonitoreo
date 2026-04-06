@@ -58,7 +58,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 9, // 🚀 BUMP A VERSIÓN 9
+      version: 10, // 🚀 BUMP A VERSIÓN 10 (CATEGORÍAS DE PARÁMETROS)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -120,6 +120,16 @@ class DatabaseHelper {
         }
       } catch (e) {
         await _log('⚠️ [UPGRADE] Error agregando endpoint "muestras": $e');
+      }
+    }
+
+    if (oldVersion < 10) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando columna categoria a parametros...');
+        await db.execute("ALTER TABLE parametros ADD COLUMN categoria TEXT;");
+        await _log('✅ [UPGRADE] Columna categoria agregada exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando categoria: $e');
       }
     }
   }
@@ -266,7 +276,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE parametros (
         id INTEGER PRIMARY KEY, nombre TEXT, clave_interna TEXT, unidad TEXT, 
-        minimo REAL, maximo REAL, activo INTEGER
+        minimo REAL, maximo REAL, categoria TEXT, activo INTEGER
       )
     ''');
 
@@ -598,6 +608,34 @@ class DatabaseHelper {
     return -1;
   }
 
+  /// Returns a sync status code: 0 = No Record, 1 = Draft/Not Sent, 2 = Sent (Phase 81)
+  Future<int> getStationLatestSyncStatus(int stationId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> result = await db.query(
+      'monitoreos',
+      columns: ['id', 'is_draft'], 
+      where: 'estacion_id = ?',
+      whereArgs: [stationId],
+      orderBy: 'id DESC', 
+      limit: 1,
+    );
+
+    if (result.isEmpty) return 0; // No record -> Grey
+    if (result.first['is_draft'] == 1) return 1; // Draft -> Yellow
+    return 2; // Sent -> Green
+  }
+
+
+  Future<List<Map<String, dynamic>>> getHistorialMedicionesByMonitoreoId(int monitoreoId) async {
+    final db = await database;
+    return await db.query(
+      'historial_mediciones',
+      where: 'monitoreo_id = ?',
+      whereArgs: [monitoreoId]
+    );
+  }
+
+
   Future<int> updateMonitoreoSyncStatus(int id, String status) async {
     final db = await database;
     return await db.update('monitoreos', {'sync_status': status}, where: 'id = ?', whereArgs: [id]);
@@ -666,6 +704,8 @@ class DatabaseHelper {
     
     return monitoreoId;
   }
+
+
 
   Future<List<Usuario>> getUsuarios() async {
     final db = await database;
@@ -1107,7 +1147,14 @@ class DatabaseHelper {
           estacionesTotales += listaEstaciones.length;
 
           for (var est in listaEstaciones) {
-            final int estId = est['id'] is String ? int.parse(est['id']) : (est['id'] ?? 0);
+            int estId = est['id'] is String ? int.parse(est['id']) : (est['id'] ?? 0);
+
+            // 🛡️ [SYNC-FIX] Fallback for missing ID to prevent overwrites
+            if (estId == 0) {
+              final String stationName = est['estacion']?.toString() ?? 'Sin Nombre';
+              estId = stationName.hashCode.abs();
+              await _log('⚠️ [SYNC-WARNING] Estación "$stationName" llegó sin ID válido. Usando ID fallback: $estId');
+            }
 
             batch.insert('stations', {
               'id': estId,
@@ -1202,7 +1249,14 @@ class DatabaseHelper {
         estacionesTotales += listaEstaciones.length;
 
         for (var est in listaEstaciones) {
-          final int estId = est['id'] is String ? int.parse(est['id']) : (est['id'] ?? 0);
+          int estId = est['id'] is String ? int.parse(est['id']) : (est['id'] ?? 0);
+
+          // 🛡️ [SYNC-FIX] Fallback for missing ID to prevent overwrites
+          if (estId == 0) {
+            final String stationName = est['estacion']?.toString() ?? 'Sin Nombre';
+            estId = stationName.hashCode.abs();
+            await _log('⚠️ [SYNC-WARNING] Estación "$stationName" llegó sin ID válido. Usando ID fallback: $estId');
+          }
 
           batch.insert('stations', {
             'id': estId,
@@ -1289,5 +1343,29 @@ class DatabaseHelper {
     final count = await db.delete('notificaciones');
     await _notificarCambios();
     return count;
+  }
+  /// Alterna el estado activo/inactivo de un parámetro por su ID.
+  Future<int> toggleParametroStatus(int id, bool isActive) async {
+    final db = await database;
+    return await db.update(
+      'parametros', 
+      {'activo': isActive ? 1 : 0}, 
+      where: 'id = ?', 
+      whereArgs: [id]
+    );
+  }
+
+  /// Obtiene solamente los parámetros que tienen el campo 'activo' en 1.
+  Future<List<Parametro>> getActiveParametros() async {
+    final db = await database;
+    final maps = await db.query('parametros', where: 'activo = 1');
+    return maps.map((map) {
+      final adjusted = Map<String, dynamic>.from(map);
+      adjusted['id_parametro'] = map['id'];
+      adjusted['nombre_parametro'] = map['nombre'];
+      adjusted['min'] = map['minimo'];
+      adjusted['max'] = map['maximo'];
+      return Parametro.fromJson(adjusted);
+    }).toList();
   }
 }
