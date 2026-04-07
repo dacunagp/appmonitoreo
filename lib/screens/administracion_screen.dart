@@ -73,6 +73,9 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   Future<void> _loadAllData() async {
     setState(() => _isLoading = true);
     try {
+      // 0. Perform Category Sync/Migration (Phase 102.1)
+      await _dbHelper.migrateCategories();
+      
       final usuarios = await _dbHelper.getUsuarios();
       final metodos = await _dbHelper.getMetodos();
       final matrices = await _dbHelper.getMatrices();
@@ -142,7 +145,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     int? selectedTipoId;
 
     String? selectedCategoria;
-    final List<String> categories = ['Multiparámetro', 'Parámetros Adicionales', 'Nivel Freático', 'Turbiedad'];
+    final List<String> categories = ['Datos de Monitoreo', 'Nivel Freático', 'Multiparámetro', 'Turbiedad', 'Parámetros Adicionales'];
 
     if (isEdit) {
       if (type == 'Usuario') {

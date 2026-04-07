@@ -14,6 +14,50 @@ class DatabaseHelper {
 
   DatabaseHelper._internal();
 
+  static const Map<String, String> _defaultCategories = {
+    'Profundidad': 'Datos de Monitoreo',
+    'Nivel': 'Nivel Freático',
+    'pH': 'Multiparámetro',
+    'Temperatura': 'Multiparámetro',
+    'Conductividad': 'Multiparámetro',
+    'Oxigeno': 'Multiparámetro',
+    'Oxígeno': 'Multiparámetro',
+    'Turbiedad': 'Turbiedad',
+    'Caudal': 'Parámetros Adicionales',
+    'SDT': 'Parámetros Adicionales',
+    'Uranio': 'Parámetros Adicionales',
+  };
+
+  String _resolveCategory(String? current, String? name) {
+    if (name == null) return 'Parámetros Adicionales';
+    final lowerName = name.toLowerCase();
+
+    // 1. Mandatory mapping based on keywords (Orientation Logic)
+    if (lowerName.contains('ph') || lowerName.contains('temperatura') || 
+        lowerName.contains('conductividad') || lowerName.contains('oxigeno') || 
+        lowerName.contains('oxígeno')) {
+      return 'Multiparámetro';
+    }
+    if (lowerName.contains('turbiedad')) {
+      return 'Turbiedad';
+    }
+    if (lowerName.contains('nivel')) {
+      return 'Nivel Freático';
+    }
+    if (lowerName.contains('profundidad')) {
+      return 'Datos de Monitoreo';
+    }
+
+    // 2. Fallback to existing if it's not empty/null
+    if (current != null && current.isNotEmpty && current != 'Sin Categoría' && 
+        current != 'null' && current != 'adicional') {
+      return current;
+    }
+
+    // 3. Final Default
+    return 'Parámetros Adicionales';
+  }
+
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -386,7 +430,11 @@ class DatabaseHelper {
       whereArgs: [estacion, parametro],
       orderBy: 'fecha ASC',
     );
-    return maps.map((map) => (map['valor'] as num).toDouble()).toList();
+    return maps.map((map) {
+      dynamic val = map['valor'];
+      if (val is num) return val.toDouble();
+      return double.tryParse(val?.toString() ?? '') ?? 0.0;
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> getHistorialMuestrasByStationName(String stationName) async {
@@ -633,6 +681,11 @@ class DatabaseHelper {
       where: 'monitoreo_id = ?',
       whereArgs: [monitoreoId]
     );
+  }
+
+  // Alias for readability/consistency in Phase 101 refactoring
+  Future<List<Map<String, dynamic>>> getDetallesLocalesPorMonitoreo(int monitoreoId) async {
+    return await getHistorialMedicionesByMonitoreoId(monitoreoId);
   }
 
 
@@ -894,20 +947,28 @@ class DatabaseHelper {
 
   Future<int> addParametro(Parametro item) async {
     final db = await database;
+    final String resolvedCat = _resolveCategory(item.categoria, item.nombreParametro);
+    
     final map = item.toMap();
     map['id'] = map.remove('id_parametro');
     map['nombre'] = map.remove('nombre_parametro');
     map['minimo'] = map.remove('min');
     map['maximo'] = map.remove('max');
+    map['categoria'] = resolvedCat;
+    
     return await db.insert('parametros', map);
   }
   Future<int> updateParametro(Parametro item) async {
     final db = await database;
+    final String resolvedCat = _resolveCategory(item.categoria, item.nombreParametro);
+    
     final map = item.toMap();
     map['id'] = map.remove('id_parametro');
     map['nombre'] = map.remove('nombre_parametro');
     map['minimo'] = map.remove('min');
     map['maximo'] = map.remove('max');
+    map['categoria'] = resolvedCat;
+    
     return await db.update('parametros', map, where: 'id = ?', whereArgs: [item.idParametro]);
   }
   Future<int> deleteParametro(int id) async => database.then((db) => db.delete('parametros', where: 'id = ?', whereArgs: [id]));
@@ -1032,6 +1093,7 @@ class DatabaseHelper {
     Batch batch = db.batch();
     batch.delete('parametros');
     for (var p in items) {
+      final String resolvedCat = _resolveCategory(p.categoria, p.nombreParametro);
       final map = p.toMap();
       // Adjust keys for DB schema if necessary
       final dbMap = {
@@ -1041,6 +1103,7 @@ class DatabaseHelper {
         'unidad': map['unidad'],
         'minimo': map['min'],
         'maximo': map['max'],
+        'categoria': resolvedCat,
         'activo': 1 // Default to active when synced
       };
       batch.insert('parametros', dbMap);
@@ -1114,16 +1177,21 @@ class DatabaseHelper {
       }
 
       if (data.containsKey('parametros')) {
-        await _log('🔍 [SYNC] Procesando catálogo especial: parametros (conversión de booleanos)');
+        await _log('🔍 [SYNC] Procesando catálogo especial: parametros (categorización dinámica)');
         batch.delete('parametros');
         List parametros = data['parametros'];
         for (var p in parametros) {
           final mapToInsert = Map<String, dynamic>.from(p);
+          final String pName = p['nombre']?.toString() ?? 'Sin nombre';
+          final String? pCat = p['categoria']?.toString();
+          
           mapToInsert['activo'] = (p['activo'] == true) ? 1 : 0;
-          mapToInsert['nombre'] = p['nombre']?.toString() ?? 'Sin nombre';
+          mapToInsert['nombre'] = pName;
+          mapToInsert['categoria'] = _resolveCategory(pCat, pName);
+          
           batch.insert('parametros', mapToInsert);
         }
-        await _log('   -> ${parametros.length} parámetros preparados.');
+        await _log('   -> ${parametros.length} parámetros preparados con auto-categorización.');
       } else {
         await _log('⚠️ [SYNC] JSON no contiene llave "parametros". Saltando.');
       }
@@ -1367,5 +1435,35 @@ class DatabaseHelper {
       adjusted['max'] = map['maximo'];
       return Parametro.fromJson(adjusted);
     }).toList();
+  }
+
+  /// Migración: Aplica categorías por defecto a todos los parámetros basándose en su nombre/clave.
+  Future<void> migrateCategories() async {
+    await _log('🛠️ [MIGRACIÓN] Iniciando asignación de categorías por defecto...');
+    final db = await database;
+    final List<Map<String, dynamic>> rows = await db.query('parametros');
+    
+    int count = 0;
+    Batch batch = db.batch();
+    
+    for (var row in rows) {
+      final String? currentCat = row['categoria']?.toString();
+      final String pName = row['nombre']?.toString() ?? '';
+      
+      final String resolved = _resolveCategory(currentCat, pName);
+      
+      // We update if the category changed or was null/default
+      if (resolved != currentCat) {
+        batch.update('parametros', {'categoria': resolved}, where: 'id = ?', whereArgs: [row['id']]);
+        count++;
+      }
+    }
+    
+    if (count > 0) {
+      await batch.commit(noResult: true);
+      await _log('✅ [MIGRACIÓN] Corregidos $count parámetros con categorías sincronizadas.');
+    } else {
+      await _log('ℹ️ [MIGRACIÓN] No se encontraron parámetros para corregir.');
+    }
   }
 }

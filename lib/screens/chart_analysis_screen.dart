@@ -281,7 +281,34 @@ class _ChartAnalysisScreenState extends State<ChartAnalysisScreen> {
   }
 
   Widget _buildStatusBanner() {
+    // Phase 105: Safe UI Override for "Sin Historial"
+    final bool sinHistorial = _historicalData.length < 5;
     final bool outOfRange = _isOutOfRange;
+
+    if (sinHistorial) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        color: Colors.orange.shade100,
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade900),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Anomalo: Sin historial',
+                style: TextStyle(
+                  color: Colors.orange.shade900,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Standard Red/Green alerts
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),

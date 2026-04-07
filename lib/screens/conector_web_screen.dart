@@ -59,6 +59,10 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
     });
     try {
       await _apiService.fetchAllData();
+      
+      // Phase 101: Auto-categorize synced parameters
+      await _dbHelper.migrateCategories();
+      
       setState(() => _syncStatusMessage = 'Datos guardados correctamente...');
       
       await _loadPrograms();
