@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
+import '../models/models.dart';
 
 class EnviarDatosScreen extends StatefulWidget {
   const EnviarDatosScreen({super.key});
@@ -37,12 +38,6 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     } catch (e) {
       return isoString; // fallback
     }
-  }
-
-  String? _formatDateForPython(String? isoDate) {
-    if (isoDate == null || isoDate.isEmpty) return null;
-    // Removes the 'T' and strips milliseconds: "2026-03-30T05:04:00.000" -> "2026-03-30 05:04:00"
-    return isoDate.replaceAll('T', ' ').split('.').first;
   }
 
   Future<void> _log(String message) async {
@@ -79,18 +74,17 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       await _log('🔍 Verificando conexión a: $baseUrl');
       
       final response = await http.get(testUrl).timeout(const Duration(seconds: 10));
+      await _log('✅ Conexión establecida (Status: ${response.statusCode})');
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ Conexión exitosa con el servidor en: $baseUrl'), backgroundColor: Colors.green),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Conexión establecida con éxito'), backgroundColor: Colors.green)
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ No se pudo conectar al servidor. Verifica tu red e IP.'), backgroundColor: Colors.red),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ No se pudo conectar al servidor. Verifica tu red e IP.'), backgroundColor: Colors.red),
+      );
     }
   }
 
@@ -210,45 +204,23 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               "valor": d['valor']?.toString() ?? '0.0',
             }).toList();
 
-            final item = {
-              "id": record['id'],
-              "device_id": "MOBILE-DATA",
-              "programa_id": record['programa_id'],
-              "estacion_id": record['estacion_id'],
-              "fecha_hora": _formatDateForPython(record['fecha_hora']),
-              "monitoreo_fallido": record['monitoreo_fallido'],
-              "observacion": record['observacion'],
-              "matriz_id": record['matriz_id'],
-              "equipo_multi_id": record['equipo_multi_id'],
-              "turbidimetro_id": record['turbidimetro_id'],
-              "metodo_id": record['metodo_id'],
-              "hidroquimico": record['hidroquimico'],
-              "isotopico": record['isotopico'],
-              "cod_laboratorio": record['cod_laboratorio'],
-              "usuario_id": record['usuario_id'],
-              "is_draft": 0,
-              "equipo_nivel_id": record['equipo_nivel_id'],
-              "tipo_pozo": record['tipo_pozo'],
-              "fecha_hora_nivel": _formatDateForPython(record['fecha_hora_nivel']),
-              "temperatura": record['temperatura'],
-              "ph": record['ph'],
-              "conductividad": record['conductividad'],
-              "oxigeno": record['oxigeno'],
-              "turbiedad": record['turbiedad'],
-              "profundidad": record['profundidad'],
-              "nivel": record['nivel'],
-              "latitud": record['latitud'],
-              "longitud": record['longitud'],
-              "foto_path": await _compressAndEncodeImage(record['foto_path']),
-              "foto_multiparametro": await _compressAndEncodeImage(record['foto_multiparametro']),
-              "foto_turbiedad": await _compressAndEncodeImage(record['foto_turbiedad']),
-              "detalles": formattedDetails, // 🚀 NEW: Attach extra parameters in EAV format
-            };
+            final monitoreo = Monitoreo.fromMap(record);
+            final item = await monitoreo.toJsonForSync(
+              compressPhoto: _compressAndEncodeImage,
+              legacyDetalles: formattedDetails,
+            );
 
             final payload = {"monitoreos": [item]};
             final jsonBody = jsonEncode(payload);
-            debugPrint('🩻 [DEEP DEBUG] Payload enviado al servidor para ID ${record['id']}:');
-            debugPrint(jsonBody); // Imprime el JSON exacto para poder probarlo en Postman
+
+            // 🩻 [DEEP DEBUG] Verify architecture BEFORE sending (trimmed for logs)
+            final debugItem = Map<String, dynamic>.from(item)
+              ..['foto_path'] = item['foto_path'] != null ? '[BASE64_IMAGE]' : null
+              ..['foto_multiparametro'] = item['foto_multiparametro'] != null ? '[BASE64_IMAGE]' : null
+              ..['foto_turbiedad'] = item['foto_turbiedad'] != null ? '[BASE64_IMAGE]' : null;
+            
+            debugPrint('🩻 [PHASE 115] Payload structure for ID ${record['id']}: ${jsonEncode({"monitoreos": [debugItem]})}');
+            debugPrint('🩻 [DEEP DEBUG] Sending full payload (ID: ${record['id']})...');
 
             cronometroRed.start();
             final response = await http.post(
@@ -269,8 +241,9 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
                 await _dbHelper.updateRegistroMonitoreo(record['id'], {'is_draft': 2});
                 enviosExitosos++;
                 if (dialogSetState != null) dialogSetState!(() {});
-                debugPrint('⏱️ [TIEMPOS] ✅ Éxito: ${responseData['mensaje']}');
+                debugPrint('⏱️ [TIEMPOS] ✅ Éxito: ${responseData['mensaje']} (${recordTimer.elapsedMilliseconds} ms)');
               } else {
+                debugPrint('⏱️ [TIEMPOS] ⚠️ Rechazado: ${responseData['mensaje']} (${recordTimer.elapsedMilliseconds} ms)');
                 throw Exception('Rechazado por API: ${responseData['mensaje'] ?? 'Error desconocido'}');
               }
             } else {
@@ -346,10 +319,11 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
       }
     } catch (e) {
       debugPrint('❌ [ENVIAR] ERROR CRÍTICO FUERA DEL LOOP: $e');
-      if (mounted) {
-        Navigator.pop(context); // Cerrar loader
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ Error crítico: $e'), backgroundColor: Colors.red));
-      }
+      if (!mounted) return;
+      Navigator.pop(context); // Cerrar loader
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error de conexión: $e'), backgroundColor: Colors.redAccent)
+      );
     } finally {
       cronometroTotal.stop();
       debugPrint('⏱️ [TIEMPOS] 🏁 Proceso completo finalizado en ${cronometroTotal.elapsedMilliseconds / 1000} segundos.');

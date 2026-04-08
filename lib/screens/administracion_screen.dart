@@ -31,6 +31,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   String _searchQuery = '';
   int? _selectedProgramaFilter;
 
+  // Fase 109: Reserved Keys for Internal Use (Fixed Columns in Monitoreos Table)
+  static const List<String> _reservedKeys = [
+    'ph', 'temperatura', 'conductividad', 'oxigeno', 
+    'turbiedad', 'profundidad', 'nivel', 'caudal', 'latitud', 'longitud'
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +147,14 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     final TextEditingController _unidadController = TextEditingController();
     final TextEditingController _minController = TextEditingController();
     final TextEditingController _maxController = TextEditingController();
+    
+    // Fase 109: Auto-generation logic for claveInterna
+    if (type == 'Parámetro' && !isEdit) {
+      c1.addListener(() {
+        _claveController.text = _normalizeClave(c1.text);
+      });
+    }
+
     int? selectedProgramId;
     int? selectedTipoId;
 
@@ -234,13 +248,19 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   const SizedBox(height: 8),
                   const SizedBox(height: 8),
                   Visibility(
-                    visible: !isEdit,
+                    visible: true, // Show always in Phase 109 to let user review the auto-gen key
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         TextField(
                           controller: _claveController,
-                          decoration: const InputDecoration(labelText: 'Clave Interna'),
+                          readOnly: true, // Fase 109: Auto-generated internal key is read-only
+                          decoration: InputDecoration(
+                            labelText: 'Clave Interna (Auto-generada)',
+                            helperText: isEdit ? 'La clave interna no se puede modificar' : 'Se genera automáticamente del nombre',
+                            filled: true,
+                            fillColor: Theme.of(context).brightness == Brightness.dark ? Colors.black12 : Colors.grey.shade100,
+                          ),
                         ),
                         const SizedBox(height: 8),
                       ],
@@ -298,6 +318,36 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   if (c1.text.trim().isEmpty || _claveController.text.trim().isEmpty || _unidadController.text.trim().isEmpty || selectedCategoria == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Por favor, rellene todos los campos, incluyendo la Categoría.'), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+
+                  final newClave = _claveController.text.trim().toLowerCase();
+
+                  // 1. Check against Reserved System Keys (Phase 109)
+                  if (_reservedKeys.contains(newClave)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('El nombre base "$newClave" está reservado por el sistema. Intente agregar un número o sufijo (ej: ${c1.text} 2).'),
+                        backgroundColor: Colors.redAccent,
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                    return;
+                  }
+
+                  // 2. Check against Existing Parameters (excluding itself if editing)
+                  final bool isDuplicate = _parametros.any((p) {
+                    if (isEdit && p.idParametro == (item as Parametro).idParametro) return false;
+                    return p.claveInterna.toLowerCase() == newClave;
+                  });
+
+                  if (isDuplicate) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Ya existe un parámetro con una clave interna similar. Use un nombre más específico.'),
+                        backgroundColor: Colors.redAccent,
+                      ),
                     );
                     return;
                   }
@@ -737,5 +787,29 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     }
     // Fallback for parameters not currently mapped in the UI (e.g., Uranio, Caudal)
     return 'Registrar Monitoreo - Parámetros Adicionales';
+  }
+
+  // --- FASE 109: HELPER PARA NORMALIZAR CLAVE INTERNA ---
+  String _normalizeClave(String name) {
+    String normalized = name.toLowerCase().trim();
+    
+    // Replace accents/diacritics
+    normalized = normalized.replaceAll(RegExp(r'[áàäâ]'), 'a');
+    normalized = normalized.replaceAll(RegExp(r'[éèëê]'), 'e');
+    normalized = normalized.replaceAll(RegExp(r'[íìïî]'), 'i');
+    normalized = normalized.replaceAll(RegExp(r'[óòöô]'), 'o');
+    normalized = normalized.replaceAll(RegExp(r'[úùüû]'), 'u');
+    normalized = normalized.replaceAll(RegExp(r'[ñ]'), 'n');
+
+    // Replace spaces and special chars with underscores
+    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9]'), '_');
+    
+    // Remove multiple consecutive underscores
+    normalized = normalized.replaceAll(RegExp(r'_+'), '_');
+    
+    // Remove leading/trailing underscores
+    normalized = normalized.replaceAll(RegExp(r'^_+|_+$'), '');
+
+    return normalized;
   }
 }

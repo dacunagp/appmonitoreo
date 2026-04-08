@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'dart:io';
@@ -24,6 +25,19 @@ class RegistrarMonitoreoScreen extends StatefulWidget {
 
   @override
   State<RegistrarMonitoreoScreen> createState() => _RegistrarMonitoreoScreenState();
+}
+
+// Fase 111: Supporting multiple instances of the same parameter
+class ParametroInstancia {
+  final Parametro parametro;
+  final TextEditingController controller;
+  final String uniqueId;
+
+  ParametroInstancia({
+    required this.parametro,
+    required this.controller,
+    required this.uniqueId,
+  });
 }
 
 class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
@@ -79,10 +93,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   Map<String, List<Parametro>> _categorizedParams = {};
   Set<String> _activeParameterKeys = {};
   
-  // DYNAMIC PARAMETERS (Phase 103 Manual Builder)
+  // DYNAMIC PARAMETERS (Phase 103/111/114 Manual Builder)
   List<Parametro> _availableExtraParams = []; // Catalog for manual addition
-  List<Parametro> _selectedAdicionales = [];  // Manually added by user (builders)
+  List<ParametroInstancia> _selectedAdicionalesInstancias = []; // Phase 114
+  List<ParametroInstancia> _selectedMultiInstancias = [];      // Phase 114
   Parametro? _parametroAdicionalSeleccionado;
+  Parametro? _parametroMultiDummySeleccionado;
   
   // LEVEL VARIABLES
   String? _equipoNivelSeleccionado;
@@ -106,11 +122,16 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
   bool get _isMultiparametroComplete {
     if (_equipoMultiparametroSeleccionado == null) return false;
-    return (_paramControllers['temperatura']?.text.isNotEmpty ?? false) &&
-           (_paramControllers['ph']?.text.isNotEmpty ?? false) &&
-           (_paramControllers['conductividad']?.text.isNotEmpty ?? false) &&
-           (_paramControllers['oxigeno']?.text.isNotEmpty ?? false) &&
-           _fotoMultiparametroPath != null;
+    
+    // Phase 114: Check that core parameters exist in _selectedMultiInstancias and are filled
+    final coreKeys = ['ph', 'temperatura', 'conductividad', 'oxigeno'];
+    for (var key in coreKeys) {
+      final hasEntry = _selectedMultiInstancias.any((inst) => 
+        inst.parametro.claveInterna == key && inst.controller.text.isNotEmpty);
+      if (!hasEntry) return false;
+    }
+    
+    return _fotoMultiparametroPath != null;
   }
 
   bool get _isTurbiedadComplete {
@@ -202,10 +223,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'fecha_hora_nivel': _fechaYHoraNivel?.toIso8601String(),
         'latitud': _estacionLatitud,
         'longitud': _estacionLongitud,
-        'temperatura': double.tryParse(_paramControllers['temperatura']?.text ?? ''),
-        'ph': double.tryParse(_paramControllers['ph']?.text ?? ''),
-        'conductividad': double.tryParse(_paramControllers['conductividad']?.text ?? ''),
-        'oxigeno': double.tryParse(_paramControllers['oxigeno']?.text ?? ''),
         'turbiedad': double.tryParse(_paramControllers['turbiedad']?.text ?? ''),
         'profundidad': double.tryParse(_paramControllers['profundidad']?.text ?? ''),
         'nivel': double.tryParse(_paramControllers['nivel']?.text ?? ''),
@@ -216,18 +233,34 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       if (header['id'] == null) {
         header.remove('id');
       }
-      // 2. Build Details List (Parameters that are NOT in hardcoded columns)
-      final hardcodedCols = ['temperatura', 'ph', 'conductividad', 'oxigeno', 'turbiedad', 'profundidad', 'nivel'];
-      
-      List<Map<String, dynamic>> detalles = _paramControllers.entries
-        .where((entry) => !hardcodedCols.contains(entry.key) && entry.value.text.trim().isNotEmpty)
-        .map((entry) {
-          return <String, dynamic>{
-            'parametro': entry.key,
-            'valor': entry.value.text.trim(),
-          };
-        })
-        .toList();
+      // 2. Build JSON Document (Phase 114 - Dual JSON Serialization)
+      final List<Map<String, dynamic>> multiList = [];
+      final List<Map<String, dynamic>> adicionalesList = [];
+
+      // A. Process Multiparametros
+      for (var inst in _selectedMultiInstancias) {
+        if (inst.controller.text.trim().isNotEmpty) {
+          multiList.add({
+            inst.parametro.claveInterna: double.tryParse(inst.controller.text) ?? inst.controller.text.trim()
+          });
+        }
+      }
+
+      // B. Process Parámetros Adicionales
+      for (var inst in _selectedAdicionalesInstancias) {
+        if (inst.controller.text.trim().isNotEmpty) {
+          adicionalesList.add({
+            inst.parametro.claveInterna: double.tryParse(inst.controller.text) ?? inst.controller.text.trim()
+          });
+        }
+      }
+
+      header['multiparametros_json'] = jsonEncode(multiList);
+      header['detalles_json'] = jsonEncode(adicionalesList);
+
+      // Legacy support: We send empty list to transaction for local captures 
+      // as we are pivoting to Document Pattern.
+      List<Map<String, dynamic>> detalles = [];
       
 
       
@@ -304,10 +337,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         }
       }
 
-      final mainCategoriesList = ['Multiparámetro', 'Turbiedad', 'Nivel Freático', 'Datos de Monitoreo'];
+      final vipKeysList = ['profundidad', 'nivel', 'turbiedad'];
       final availableExtras = allParams.where((p) {
-        final cat = _getUbicacionParametro(p);
-        return !mainCategoriesList.contains(cat) && !_fixedKeys.contains(p.claveInterna);
+        return !vipKeysList.contains(p.claveInterna.toLowerCase());
       }).toList();
 
       // Apply initial catalogs to state (needed for lookup in _loadExistingData if it uses current state)
@@ -323,6 +355,24 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _activeParameterKeys = activeKeys;
         _categorizedParams = categorized;
         _availableExtraParams = availableExtras;
+
+        // --- UX FEATURE (Phase 114): Auto-Populate Base Multiparameters ---
+        if (widget.registroId == null && _selectedMultiInstancias.isEmpty) {
+          final baseKeys = ['ph', 'temperatura', 'conductividad', 'oxigeno'];
+          for (var key in baseKeys) {
+            try {
+              final p = allParams.firstWhere((param) => param.claveInterna == key);
+              final controller = TextEditingController();
+              controller.addListener(_onFieldChanged);
+              
+              _selectedMultiInstancias.add(ParametroInstancia(
+                parametro: p, 
+                controller: controller, 
+                uniqueId: '${key}_initial_${DateTime.now().millisecondsSinceEpoch}'
+              ));
+            } catch (_) {}
+          }
+        }
       });
 
       // 4. If Edit Mode, Load Draft Data (Inject text into the controllers we just created)
@@ -345,6 +395,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     final data = await _dbHelper.getRegistroMonitoreoById(id);
     if (data == null) return;
 
+    final allParams = await _dbHelper.getParametros();
+
     // 1. Fetch Inspector (Synchronous/Awaited for Phase 99)
     String? inspectorName;
     if (data['usuario_id'] != null) {
@@ -355,41 +407,120 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       } catch (_) {}
     }
 
-    // 2. Load Details (Extra Parameters) BEFORE updating state
-    final savedExtras = await _dbHelper.getDetallesLocalesPorMonitoreo(id);
-    debugPrint('--- LOCAL DRAFT DETAILS FETCHED: ${savedExtras.length} ---');
+    // 2. Load Details (Phase 114 - Dual JSON Deserialization)
+    final List<ParametroInstancia> multiToLoad = [];
+    final List<ParametroInstancia> adicionalesToLoad = [];
+    final Map<String, String> legacyValues = {};
 
-    final allParams = await _dbHelper.getParametros();
-    final mainCategories = ['Multiparámetro', 'Turbiedad', 'Nivel Freático'];
-
-    // Map saved extras into controllers map and _selectedAdicionales
-    final List<Parametro> extrasToAdd = [];
-    final Map<String, String> valuesToSet = {};
-
-    for (var row in savedExtras) {
-      final key = row['parametro']?.toString();
-      if (key == null || key.isEmpty) continue;
-      final loadValue = row['valor']?.toString() ?? '';
-
-      valuesToSet[key] = loadValue;
-
-      // Ensure controller exists if it's not a pre-initialized active param
-      if (!_paramControllers.containsKey(key)) {
-        final controller = TextEditingController();
-        controller.addListener(_onFieldChanged);
-        _paramControllers[key] = controller;
-      }
-
+    // A. Parse Multiparametros JSON (New Format)
+    if (data['multiparametros_json'] != null) {
       try {
-        final p = allParams.firstWhere((param) => param.claveInterna == key);
-        final effectiveCat = _getUbicacionParametro(p);
-        if (!['Multiparámetro', 'Turbiedad', 'Nivel Freático', 'Datos de Monitoreo'].contains(effectiveCat) && 
-            !_fixedKeys.contains(p.claveInterna)) {
-          if (!_selectedAdicionales.any((item) => item.claveInterna == key)) {
-            extrasToAdd.add(p);
+        final List<dynamic> list = jsonDecode(data['multiparametros_json']);
+        for (var entry in list) {
+          if (entry is Map<String, dynamic>) {
+            entry.forEach((key, val) {
+              try {
+                final p = allParams.firstWhere((param) => param.claveInterna == key);
+                final controller = TextEditingController(text: val.toString());
+                controller.addListener(_onFieldChanged);
+                multiToLoad.add(ParametroInstancia(
+                  parametro: p,
+                  controller: controller,
+                  uniqueId: '${key}_${DateTime.now().microsecondsSinceEpoch}_${multiToLoad.length}',
+                ));
+              } catch (_) {}
+            });
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('🚨 Error decoding multiparametros_json: $e');
+      }
+    }
+
+    // B. Parse Detalles JSON (New Format)
+    if (data['detalles_json'] != null) {
+      try {
+        final dynamic rawDoc = jsonDecode(data['detalles_json']);
+        if (rawDoc is List) {
+          // Phase 111/114 format
+          for (var entry in rawDoc) {
+            if (entry is Map<String, dynamic>) {
+              entry.forEach((key, val) {
+                try {
+                  final p = allParams.firstWhere((param) => param.claveInterna == key);
+                  final controller = TextEditingController(text: val.toString());
+                  controller.addListener(_onFieldChanged);
+                  adicionalesToLoad.add(ParametroInstancia(
+                    parametro: p,
+                    controller: controller,
+                    uniqueId: '${key}_${DateTime.now().microsecondsSinceEpoch}_${adicionalesToLoad.length}',
+                  ));
+                } catch (_) {}
+              });
+            }
+          }
+        } else if (rawDoc is Map<String, dynamic>) {
+          // Old legacy categorized format (Phase 111)
+          rawDoc.forEach((cat, content) {
+            if (content is List) {
+              for (var entry in content) {
+                if (entry is Map<String, dynamic>) {
+                  entry.forEach((key, val) {
+                    try {
+                      final p = allParams.firstWhere((param) => param.claveInterna == key);
+                      final controller = TextEditingController(text: val.toString());
+                      controller.addListener(_onFieldChanged);
+                      
+                      final effectiveCat = _getUbicacionParametro(p);
+                      if (effectiveCat == 'Multiparámetro') {
+                        multiToLoad.add(ParametroInstancia(parametro: p, controller: controller, uniqueId: '${key}_migrated'));
+                      } else {
+                        adicionalesToLoad.add(ParametroInstancia(parametro: p, controller: controller, uniqueId: '${key}_migrated'));
+                      }
+                    } catch (_) {}
+                  });
+                }
+              }
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('🚨 Error decoding detalles_json: $e');
+      }
+    }
+
+    // C. Backward Compatibility: Fixed Columns & Legacy SQL
+    // If no JSON data was successfully loaded into the lists, try to recover from fixed columns/SQL
+    if (multiToLoad.isEmpty) {
+      final coreKeys = ['ph', 'temperatura', 'conductividad', 'oxigeno'];
+      for (var key in coreKeys) {
+        final val = data[key];
+        if (val != null && val.toString().isNotEmpty) {
+          try {
+            final p = allParams.firstWhere((param) => param.claveInterna == key);
+            final controller = TextEditingController(text: val.toString());
+            controller.addListener(_onFieldChanged);
+            multiToLoad.add(ParametroInstancia(parametro: p, controller: controller, uniqueId: '${key}_recovered'));
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (adicionalesToLoad.isEmpty) {
+      // Recover from legacy SQL monitoreo_detalles
+      final savedExtras = await _dbHelper.getDetallesLocalesPorMonitoreo(id);
+      for (var row in savedExtras) {
+        final key = row['parametro']?.toString();
+        final val = row['valor']?.toString();
+        if (key != null && val != null && val.isNotEmpty) {
+          try {
+            final p = allParams.firstWhere((param) => param.claveInterna == key);
+            final controller = TextEditingController(text: val);
+            controller.addListener(_onFieldChanged);
+            adicionalesToLoad.add(ParametroInstancia(parametro: p, controller: controller, uniqueId: '${key}_recovered_sql'));
+          } catch (_) {}
+        }
+      }
     }
 
     // 3. SINGLE ATOMIC State Update for Data Injection
@@ -402,6 +533,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       _obsController.text = data['observacion'] ?? '';
       _codLabController.text = data['cod_laboratorio'] ?? '';
       _muestreoHidroquimico = data['hidroquimico'] == 1;
+      _muestreoIsotopico = data['isotopico'] == 2; // Fixed legacy typo if any
       _muestreoIsotopico = data['isotopico'] == 1;
       _inspectorSeleccionado = inspectorName;
 
@@ -446,11 +578,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _fechaYHoraNivel = DateTime.parse(data['fecha_hora_nivel']);
       }
 
-      // Hardcoded Parameters
-      _paramControllers['temperatura']?.text = data['temperatura']?.toString() ?? '';
-      _paramControllers['ph']?.text = data['ph']?.toString() ?? '';
-      _paramControllers['conductividad']?.text = data['conductividad']?.toString() ?? '';
-      _paramControllers['oxigeno']?.text = data['oxigeno']?.toString() ?? '';
+      // VIP Hardcoded Parameters Still Mapped to Controllers for Chart/Validation logic
       _paramControllers['turbiedad']?.text = data['turbiedad']?.toString() ?? '';
       _paramControllers['profundidad']?.text = data['profundidad']?.toString() ?? '';
       _paramControllers['nivel']?.text = data['nivel']?.toString() ?? '';
@@ -461,13 +589,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       _fotoMultiparametroPath = data['foto_multiparametro'];
       _fotoTurbiedadPath = data['foto_turbiedad'];
 
-      // Dynamic Extra Parameters
-      for (var p in extrasToAdd) {
-        _selectedAdicionales.add(p);
-      }
-      for (var entry in valuesToSet.entries) {
-        _paramControllers[entry.key]?.text = entry.value;
-      }
+      // Dynamic Lists (Phase 114)
+      _selectedAdicionalesInstancias = adicionalesToLoad;
+      _selectedMultiInstancias = multiToLoad;
     });
 
     // Special case: Fetch stations and ranges AFTER state is set for basic lookups
@@ -853,24 +977,90 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
               )),
               if (_equipoMultiparametroSeleccionado != null) ...[
-                ...(_categorizedParams['Multiparámetro'] ?? [])
-                    .where((p) => !_fixedKeys.contains(p.claveInterna))
-                    .map((p) => Visibility(
-                  visible: _activeParameterKeys.contains(p.claveInterna),
-                  child: CustomParametroInputRow(
-                    isReadOnly: widget.isReadOnly,
-                    label: '${p.nombreParametro} [${p.unidad}]',
-                    hintText: 'Ingrese ${p.nombreParametro}',
-                    isDarkMode: isDarkMode,
-                    controller: _paramControllers[p.claveInterna]!,
-                    parameterKey: p.claveInterna,
-                    selectedEstacion: _estacionSeleccionada?.name ?? '',
-                    hasHistory: _hasHistory,
-                    minAllowed: _parameterRanges[p.claveInterna]?['min'],
-                    maxAllowed: _parameterRanges[p.claveInterna]?['max'],
-                    onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
+                // Phase 114: Rendering Dynamic Multiparametro Instances
+                ..._selectedMultiInstancias.map((inst) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: CustomParametroInputRow(
+                          isReadOnly: widget.isReadOnly,
+                          label: '${inst.parametro.nombreParametro} [${inst.parametro.unidad}]',
+                          hintText: 'Ingrese valor',
+                          isDarkMode: isDarkMode,
+                          controller: inst.controller,
+                          parameterKey: inst.uniqueId,
+                          selectedEstacion: _estacionSeleccionada?.name ?? '',
+                          hasHistory: _hasHistory,
+                          minAllowed: _parameterRanges[inst.parametro.claveInterna]?['min'],
+                          maxAllowed: _parameterRanges[inst.parametro.claveInterna]?['max'],
+                          onPulseTap: () => _navigateToChart(inst.parametro.claveInterna, inst.controller),
+                        ),
+                      ),
+                      if (!widget.isReadOnly)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          onPressed: () => _removeInstancia(inst),
+                        ),
+                    ],
                   ),
                 )).toList(),
+                
+                if (!widget.isReadOnly) ...[
+                  const Divider(height: 32),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<Parametro>(
+                            value: _parametroMultiDummySeleccionado,
+                            decoration: InputDecoration(
+                              labelText: 'Añadir Multiparámetro Extra',
+                              labelStyle: const TextStyle(color: Colors.blueAccent, fontSize: 13),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            items: _availableExtraParams
+                              .where((p) {
+                                final key = p.claveInterna.toLowerCase();
+                                return key != 'profundidad' && key != 'nivel' && key != 'turbiedad';
+                              })
+                              .map((p) => DropdownMenuItem(
+                                value: p,
+                                child: Text('${p.nombreParametro} [${p.unidad}]', style: const TextStyle(fontSize: 14)),
+                              )).toList(),
+                            onChanged: (val) => setState(() => _parametroMultiDummySeleccionado = val),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: _parametroMultiDummySeleccionado == null ? null : () {
+                            setState(() {
+                              final controller = TextEditingController();
+                              controller.addListener(_onFieldChanged);
+                              _selectedMultiInstancias.add(ParametroInstancia(
+                                parametro: _parametroMultiDummySeleccionado!, 
+                                controller: controller, 
+                                uniqueId: '${_parametroMultiDummySeleccionado!.claveInterna}_${DateTime.now().millisecondsSinceEpoch}'
+                              ));
+                              _parametroMultiDummySeleccionado = null;
+                            });
+                            _saveAsDraft();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blueAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
                 IgnorePointer(ignoring: widget.isReadOnly, child: _buildEquipmentPhotoFullPreview(
                   title: 'EVIDENCIA MULTIPARÁMETRO',
                   path: _fotoMultiparametroPath,
@@ -886,32 +1076,29 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
             // --- SECCIÓN 4: PARÁMETROS ADICIONALES (Manual Builder Phase 103) ---
             _buildSectionTile('Parámetros Adicionales', isDarkMode, true, [
-              // 1. Manual/Dynamic List: Displays already selected parameters
-              ..._selectedAdicionales
-                  .where((p) => !_fixedKeys.contains(p.claveInterna))
-                  .map((p) => Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
+              ..._selectedAdicionalesInstancias.map((inst) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: Row(
                   children: [
                     Expanded(
                       child: CustomParametroInputRow(
                         isReadOnly: widget.isReadOnly,
-                        label: '${p.nombreParametro} [${p.unidad}]',
+                        label: '${inst.parametro.nombreParametro} [${inst.parametro.unidad}]',
                         hintText: 'Ingrese valor',
                         isDarkMode: isDarkMode,
-                        controller: _paramControllers[p.claveInterna]!,
-                        parameterKey: p.claveInterna,
+                        controller: inst.controller,
+                        parameterKey: inst.uniqueId,
                         selectedEstacion: _estacionSeleccionada?.name ?? '',
                         hasHistory: _hasHistory,
-                        minAllowed: _parameterRanges[p.claveInterna]?['min'],
-                        maxAllowed: _parameterRanges[p.claveInterna]?['max'],
-                        onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
+                        minAllowed: _parameterRanges[inst.parametro.claveInterna]?['min'],
+                        maxAllowed: _parameterRanges[inst.parametro.claveInterna]?['max'],
+                        onPulseTap: () => _navigateToChart(inst.parametro.claveInterna, inst.controller),
                       ),
                     ),
                     if (!widget.isReadOnly)
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                        onPressed: () => _removeExtraParameter(p),
+                        onPressed: () => _removeInstancia(inst),
                       ),
                   ],
                 ),
@@ -933,10 +1120,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           ),
                           items: _availableExtraParams
-                            .where((p) => 
-                              _getUbicacionParametro(p) == 'Parámetros Adicionales' && 
-                              !_selectedAdicionales.any((item) => item.claveInterna == p.claveInterna)
-                            )
+                            .where((p) {
+                              final key = p.claveInterna.toLowerCase();
+                              // Exclude core VIP parameters as per requirement
+                              return key != 'profundidad' && key != 'nivel' && key != 'turbiedad';
+                            })
                             .map((p) => DropdownMenuItem(
                               value: p,
                               child: Text('${p.nombreParametro} [${p.unidad}]', style: const TextStyle(fontSize: 14)),
@@ -949,15 +1137,20 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                       ElevatedButton(
                         onPressed: _parametroAdicionalSeleccionado == null ? null : () {
                           final p = _parametroAdicionalSeleccionado!;
-                          // Ensure controller exists and listener is added
-                          if (!_paramControllers.containsKey(p.claveInterna)) {
-                            final controller = TextEditingController();
-                            controller.addListener(_onFieldChanged);
-                            _paramControllers[p.claveInterna] = controller;
-                          }
+                          
+                          // Fase 111: Generate unique instance
+                          final controller = TextEditingController();
+                          controller.addListener(_onFieldChanged);
+                          
+                          final instanceId = '${p.claveInterna}_${DateTime.now().millisecondsSinceEpoch}';
+                          
                           setState(() {
-                            _selectedAdicionales.add(p);
-                            _parametroAdicionalSeleccionado = null; // Reset dropdown
+                            _selectedAdicionalesInstancias.add(ParametroInstancia(
+                              parametro: p,
+                              controller: controller,
+                              uniqueId: instanceId,
+                            ));
+                            _parametroAdicionalSeleccionado = null; 
                           });
                           _saveAsDraft();
                         },
@@ -2013,19 +2206,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     return p.categoria ?? 'Parámetros Adicionales';
   }
 
-  // --- DYNAMIC PARAMETER LOGIC (Phase 75/94) ---
-  void _removeExtraParameter(Parametro p) {
+  // --- DYNAMIC PARAMETER LOGIC (Phase 75/94/111/114) ---
+  void _removeInstancia(ParametroInstancia inst) {
     setState(() {
-      _selectedAdicionales.removeWhere((item) => item.claveInterna == p.claveInterna);
-      // We only dispose/remove if it's NOT in the categorized active list
-      final isInCategories = _categorizedParams.values.any((list) => list.any((item) => item.claveInterna == p.claveInterna));
-      if (!isInCategories) {
-        _paramControllers[p.claveInterna]?.dispose();
-        _paramControllers.remove(p.claveInterna);
-      } else {
-        // Just clear text if it's a standard active param
-        _paramControllers[p.claveInterna]?.clear();
-      }
+      _selectedAdicionalesInstancias.removeWhere((i) => i.uniqueId == inst.uniqueId);
+      _selectedMultiInstancias.removeWhere((i) => i.uniqueId == inst.uniqueId);
     });
     _saveAsDraft();
   }

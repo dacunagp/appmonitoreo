@@ -102,7 +102,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 10, // 🚀 BUMP A VERSIÓN 10 (CATEGORÍAS DE PARÁMETROS)
+      version: 12, // 🚀 BUMP A VERSIÓN 12 (DUAL JSON ARCHITECTURE)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -174,6 +174,26 @@ class DatabaseHelper {
         await _log('✅ [UPGRADE] Columna categoria agregada exitosamente.');
       } catch (e) {
         await _log('⚠️ [UPGRADE] Error agregando categoria: $e');
+      }
+    }
+
+    if (oldVersion < 11) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando columna detalles_json a monitoreos (Phase 108)...');
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN detalles_json TEXT;");
+        await _log('✅ [UPGRADE] Columna detalles_json agregada exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando detalles_json: $e');
+      }
+    }
+
+    if (oldVersion < 12) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando columna multiparametros_json a monitoreos (Phase 114)...');
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN multiparametros_json TEXT;");
+        await _log('✅ [UPGRADE] Columna multiparametros_json agregada exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando multiparametros_json: $e');
       }
     }
   }
@@ -273,7 +293,9 @@ class DatabaseHelper {
         profundidad REAL,
         nivel REAL,
         is_draft INTEGER DEFAULT 0,
-        sync_status TEXT DEFAULT 'pending'
+        sync_status TEXT DEFAULT 'pending',
+        detalles_json TEXT,
+        multiparametros_json TEXT
       )
     ''');
     

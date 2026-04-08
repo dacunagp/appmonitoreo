@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class Program {
   final int id;
   final String name;
@@ -293,4 +295,197 @@ class ChartData {
   final DateTime x;
   final double y;
   ChartData(this.x, this.y);
+}
+
+class Monitoreo {
+  final int? id;
+  final int? programaId;
+  final int? estacionId;
+  final String? fechaHora;
+  final int monitoreoFallido;
+  final String? observacion;
+  final int? matrizId;
+  final int? equipoMultiId;
+  final int? turbidimetroId;
+  final int? metodoId;
+  final int hidroquimico;
+  final int isotopico;
+  final String? codLaboratorio;
+  final int? usuarioId;
+  final String? fotoPath;
+  final String? fotoMultiparametro;
+  final String? fotoTurbiedad;
+  final int? equipoNivelId;
+  final String? tipoPozo;
+  final String? fechaHoraNivel;
+  final double? latitud;
+  final double? longitud;
+  final double? temperatura;
+  final double? ph;
+  final double? conductividad;
+  final double? oxigeno;
+  final double? turbiedad;
+  final double? profundidad;
+  final double? nivel;
+  final int isDraft;
+  final String? syncStatus;
+  final String? detallesJson;
+  final String? multiparametrosJson;
+
+  Monitoreo({
+    this.id,
+    this.programaId,
+    this.estacionId,
+    this.fechaHora,
+    this.monitoreoFallido = 0,
+    this.observacion,
+    this.matrizId,
+    this.equipoMultiId,
+    this.turbidimetroId,
+    this.metodoId,
+    this.hidroquimico = 0,
+    this.isotopico = 0,
+    this.codLaboratorio,
+    this.usuarioId,
+    this.fotoPath,
+    this.fotoMultiparametro,
+    this.fotoTurbiedad,
+    this.equipoNivelId,
+    this.tipoPozo,
+    this.fechaHoraNivel,
+    this.latitud,
+    this.longitud,
+    this.temperatura,
+    this.ph,
+    this.conductividad,
+    this.oxigeno,
+    this.turbiedad,
+    this.profundidad,
+    this.nivel,
+    this.isDraft = 0,
+    this.syncStatus = 'pending',
+    this.detallesJson,
+    this.multiparametrosJson,
+  });
+
+  factory Monitoreo.fromMap(Map<String, dynamic> map) {
+    return Monitoreo(
+      id: map['id'],
+      programaId: map['programa_id'],
+      estacionId: map['estacion_id'],
+      fechaHora: map['fecha_hora'],
+      monitoreoFallido: map['monitoreo_fallido'] ?? 0,
+      observacion: map['observacion'],
+      matrizId: map['matriz_id'],
+      equipoMultiId: map['equipo_multi_id'],
+      turbidimetroId: map['turbidimetro_id'],
+      metodoId: map['metodo_id'],
+      hidroquimico: map['hidroquimico'] ?? 0,
+      isotopico: map['isotopico'] ?? 0,
+      codLaboratorio: map['cod_laboratorio'],
+      usuarioId: map['usuario_id'],
+      fotoPath: map['foto_path'],
+      fotoMultiparametro: map['foto_multiparametro'],
+      fotoTurbiedad: map['foto_turbiedad'],
+      equipoNivelId: map['equipo_nivel_id'],
+      tipoPozo: map['tipo_pozo'],
+      fechaHoraNivel: map['fecha_hora_nivel'],
+      latitud: map['latitud']?.toDouble(),
+      longitud: map['longitud']?.toDouble(),
+      temperatura: map['temperatura']?.toDouble(),
+      ph: map['ph']?.toDouble(),
+      conductividad: map['conductividad']?.toDouble(),
+      oxigeno: map['oxigeno']?.toDouble(),
+      turbiedad: map['turbiedad']?.toDouble(),
+      profundidad: map['profundidad']?.toDouble(),
+      nivel: map['nivel']?.toDouble(),
+      isDraft: map['is_draft'] ?? 0,
+      syncStatus: map['sync_status'],
+      detallesJson: map['detalles_json'],
+      multiparametrosJson: map['multiparametros_json'],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'programa_id': programaId,
+      'estacion_id': estacionId,
+      'fecha_hora': fechaHora,
+      'monitoreo_fallido': monitoreoFallido,
+      'observacion': observacion,
+      'matriz_id': matrizId,
+      'equipo_multi_id': equipoMultiId,
+      'turbidimetro_id': turbidimetroId,
+      'metodo_id': metodoId,
+      'hidroquimico': hidroquimico,
+      'isotopico': isotopico,
+      'cod_laboratorio': codLaboratorio,
+      'usuario_id': usuarioId,
+      'foto_path': fotoPath,
+      'foto_multiparametro': fotoMultiparametro,
+      'foto_turbiedad': fotoTurbiedad,
+      'equipo_nivel_id': equipoNivelId,
+      'tipo_pozo': tipoPozo,
+      'fecha_hora_nivel': fechaHoraNivel,
+      'latitud': latitud,
+      'longitud': longitud,
+      'temperatura': temperatura,
+      'ph': ph,
+      'conductividad': conductividad,
+      'oxigeno': oxigeno,
+      'turbiedad': turbiedad,
+      'profundidad': profundidad,
+      'nivel': nivel,
+      'is_draft': isDraft,
+      'sync_status': syncStatus,
+      'detalles_json': detallesJson,
+      'multiparametros_json': multiparametrosJson,
+    };
+  }
+
+  /// Specialized serialization for API Sync (Phase 115)
+  Future<Map<String, dynamic>> toJsonForSync({
+    required Future<String?> Function(String?) compressPhoto,
+    List<Map<String, String>>? legacyDetalles,
+  }) async {
+    return {
+      "id": id,
+      "device_id": "MOBILE-DATA",
+      "programa_id": programaId,
+      "estacion_id": estacionId,
+      "fecha_hora": fechaHora?.replaceAll('T', ' ').split('.').first,
+      "monitoreo_fallido": monitoreoFallido,
+      "observacion": observacion,
+      "matriz_id": matrizId,
+      "equipo_multi_id": equipoMultiId,
+      "turbidimetro_id": turbidimetroId,
+      "metodo_id": metodoId,
+      "hidroquimico": hidroquimico,
+      "isotopico": isotopico,
+      "cod_laboratorio": codLaboratorio,
+      "usuario_id": usuarioId,
+      "is_draft": 0,
+      "equipo_nivel_id": equipoNivelId,
+      "tipo_pozo": tipoPozo,
+      "fecha_hora_nivel": fechaHoraNivel?.replaceAll('T', ' ').split('.').first,
+      "temperatura": temperatura,
+      "ph": ph,
+      "conductividad": conductividad,
+      "oxigeno": oxigeno,
+      "turbiedad": turbiedad,
+      "profundidad": profundidad,
+      "nivel": nivel,
+      "latitud": latitud,
+      "longitud": longitud,
+      // 🚀 DUAL-JSON ARCHITECTURE (PHASE 115)
+      "multiparametros_json": multiparametrosJson != null ? jsonDecode(multiparametrosJson!) : null,
+      "detalles_json": detallesJson != null ? jsonDecode(detallesJson!) : null,
+      "detalles": legacyDetalles ?? [], // Legacy support
+      // 🖼️ HEAVY PAYLOAD (SEND AT THE END)
+      "foto_path": await compressPhoto(fotoPath),
+      "foto_multiparametro": await compressPhoto(fotoMultiparametro),
+      "foto_turbiedad": await compressPhoto(fotoTurbiedad),
+    };
+  }
 }
