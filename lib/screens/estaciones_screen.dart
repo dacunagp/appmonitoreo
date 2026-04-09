@@ -103,7 +103,7 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
                 TextField(controller: c3, decoration: const InputDecoration(labelText: 'Longitud'), keyboardType: TextInputType.number),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<int>(
-                  value: selectedProgramId,
+                  initialValue: selectedProgramId,
                   decoration: const InputDecoration(labelText: 'Asignar a Programa'),
                   items: _programas.map((p) => DropdownMenuItem(value: p.id, child: Text(p.name))).toList(),
                   onChanged: (val) => setDialogState(() => selectedProgramId = val),
@@ -255,7 +255,7 @@ class _EstacionesScreenState extends State<EstacionesScreen> {
                           flex: 1,
                           child: DropdownButtonFormField<int?>(
                             isExpanded: true,
-                            value: _selectedProgramFilter,
+                            initialValue: _selectedProgramFilter,
                             decoration: const InputDecoration(
                               labelText: 'Programa',
                               isDense: true,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../utils/security_utils.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentRoute;
@@ -70,7 +69,7 @@ class AppDrawer extends StatelessWidget {
                 ),
                 _buildMenuItem(
                   context,
-                  title: 'ConectorWeb',
+                  title: 'Conector Web',
                   icon: Icons.cloud_download_outlined,
                   targetRoute: '/conector_web',
                   isDarkMode: isDarkMode,

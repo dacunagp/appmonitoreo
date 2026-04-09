@@ -769,7 +769,7 @@ class _GraficosScreenState extends State<GraficosScreen> with AutomaticKeepAlive
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.blue,
+            activeThumbColor: Colors.blue,
           ),
         ],
       ),

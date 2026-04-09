@@ -2543,7 +2543,10 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
             child: TextField(
               readOnly: widget.isReadOnly,
               controller: widget.controller,
-              keyboardType: TextInputType.text,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+              ],
               onChanged: (val) => widget.onPulseTap != null ? null : setState(() {}),
               style: TextStyle(color: widget.isDarkMode ? Colors.white : Colors.black),
               decoration: InputDecoration(

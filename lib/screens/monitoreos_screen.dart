@@ -453,7 +453,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
 
       // 1. Cabeceras
       final List<String> headers = data.first.keys.toList();
-      String csvData = headers.join(',') + '\n';
+      String csvData = '${headers.join(',')}\n';
 
       // 2. Filas con escaping
       for (var row in data) {
@@ -463,12 +463,12 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
           
           // Escapar si tiene comas, comillas o saltos de línea
           if (valStr.contains(',') || valStr.contains('"') || valStr.contains('\n')) {
-            valStr = '"' + valStr.replaceAll('"', '""') + '"';
+            valStr = '"${valStr.replaceAll('"', '""')}"';
           }
           return valStr;
         }).toList();
         
-        csvData += rowValues.join(',') + '\n';
+        csvData += '${rowValues.join(',')}\n';
       }
 
       // 3. Crear archivo temporal
