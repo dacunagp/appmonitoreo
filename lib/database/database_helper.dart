@@ -102,7 +102,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 12, // 🚀 BUMP A VERSIÓN 12 (DUAL JSON ARCHITECTURE)
+      version: 13, // 🚀 BUMP A VERSIÓN 13 (PHASE 115 - CAUDAL + PHOTOGRAPHIC BACKUPS)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -195,6 +195,26 @@ class DatabaseHelper {
       } catch (e) {
         await _log('⚠️ [UPGRADE] Error agregando multiparametros_json: $e');
       }
+    }
+
+    if (oldVersion < 13) {
+      await _log('🚀 [UPGRADE] Agregando columnas Phase 115 (Caudal + Respaldos Fotográficos)...');
+      final List<String> newColumns = [
+        "ALTER TABLE monitoreos ADD COLUMN equipo_caudal INTEGER;",
+        "ALTER TABLE monitoreos ADD COLUMN nivel_caudal REAL;",
+        "ALTER TABLE monitoreos ADD COLUMN fecha_hora_caudal TEXT;",
+        "ALTER TABLE monitoreos ADD COLUMN foto_caudal TEXT;",
+        "ALTER TABLE monitoreos ADD COLUMN foto_nivel_freatico TEXT;",
+        "ALTER TABLE monitoreos ADD COLUMN foto_muestreo TEXT;",
+      ];
+      for (final sql in newColumns) {
+        try {
+          await db.execute(sql);
+        } catch (e) {
+          await _log('⚠️ [UPGRADE v13] Error ejecutando "$sql": $e');
+        }
+      }
+      await _log('✅ [UPGRADE v13] Columnas Phase 115 agregadas exitosamente.');
     }
   }
 
@@ -295,7 +315,13 @@ class DatabaseHelper {
         is_draft INTEGER DEFAULT 0,
         sync_status TEXT DEFAULT 'pending',
         detalles_json TEXT,
-        multiparametros_json TEXT
+        multiparametros_json TEXT,
+        equipo_caudal INTEGER,
+        nivel_caudal REAL,
+        fecha_hora_caudal TEXT,
+        foto_caudal TEXT,
+        foto_nivel_freatico TEXT,
+        foto_muestreo TEXT
       )
     ''');
     

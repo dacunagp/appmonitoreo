@@ -217,7 +217,10 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             final debugItem = Map<String, dynamic>.from(item)
               ..['foto_path'] = item['foto_path'] != null ? '[BASE64_IMAGE]' : null
               ..['foto_multiparametro'] = item['foto_multiparametro'] != null ? '[BASE64_IMAGE]' : null
-              ..['foto_turbiedad'] = item['foto_turbiedad'] != null ? '[BASE64_IMAGE]' : null;
+              ..['foto_turbiedad'] = item['foto_turbiedad'] != null ? '[BASE64_IMAGE]' : null
+              ..['foto_caudal'] = item['foto_caudal'] != null ? '[BASE64_IMAGE]' : null
+              ..['foto_nivel_freatico'] = item['foto_nivel_freatico'] != null ? '[BASE64_IMAGE]' : null
+              ..['foto_muestreo'] = item['foto_muestreo'] != null ? '[BASE64_IMAGE]' : null;
             
             debugPrint('🩻 [PHASE 115] Payload structure for ID ${record['id']}: ${jsonEncode({"monitoreos": [debugItem]})}');
             debugPrint('🩻 [DEEP DEBUG] Sending full payload (ID: ${record['id']})...');

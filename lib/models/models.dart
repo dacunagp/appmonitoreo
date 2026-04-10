@@ -327,6 +327,12 @@ class Monitoreo {
   final double? turbiedad;
   final double? profundidad;
   final double? nivel;
+  final int? equipoCaudal;
+  final double? nivelCaudal;
+  final String? fechaHoraCaudal;
+  final String? fotoCaudal;
+  final String? fotoNivelFreatico;
+  final String? fotoMuestreo;
   final int isDraft;
   final String? syncStatus;
   final String? detallesJson;
@@ -362,6 +368,12 @@ class Monitoreo {
     this.turbiedad,
     this.profundidad,
     this.nivel,
+    this.equipoCaudal,
+    this.nivelCaudal,
+    this.fechaHoraCaudal,
+    this.fotoCaudal,
+    this.fotoNivelFreatico,
+    this.fotoMuestreo,
     this.isDraft = 0,
     this.syncStatus = 'pending',
     this.detallesJson,
@@ -399,6 +411,12 @@ class Monitoreo {
       turbiedad: map['turbiedad']?.toDouble(),
       profundidad: map['profundidad']?.toDouble(),
       nivel: map['nivel']?.toDouble(),
+      equipoCaudal: map['equipo_caudal'],
+      nivelCaudal: map['nivel_caudal']?.toDouble(),
+      fechaHoraCaudal: map['fecha_hora_caudal'],
+      fotoCaudal: map['foto_caudal'],
+      fotoNivelFreatico: map['foto_nivel_freatico'],
+      fotoMuestreo: map['foto_muestreo'],
       isDraft: map['is_draft'] ?? 0,
       syncStatus: map['sync_status'],
       detallesJson: map['detalles_json'],
@@ -437,6 +455,12 @@ class Monitoreo {
       'turbiedad': turbiedad,
       'profundidad': profundidad,
       'nivel': nivel,
+      'equipo_caudal': equipoCaudal,
+      'nivel_caudal': nivelCaudal,
+      'fecha_hora_caudal': fechaHoraCaudal,
+      'foto_caudal': fotoCaudal,
+      'foto_nivel_freatico': fotoNivelFreatico,
+      'foto_muestreo': fotoMuestreo,
       'is_draft': isDraft,
       'sync_status': syncStatus,
       'detalles_json': detallesJson,
@@ -476,6 +500,9 @@ class Monitoreo {
       "turbiedad": turbiedad,
       "profundidad": profundidad,
       "nivel": nivel,
+      "equipo_caudal": equipoCaudal,
+      "nivel_caudal": nivelCaudal,
+      "fecha_hora_caudal": fechaHoraCaudal?.replaceAll('T', ' ').split('.').first,
       "latitud": latitud,
       "longitud": longitud,
       // 🚀 DUAL-JSON ARCHITECTURE (PHASE 115)
@@ -486,6 +513,9 @@ class Monitoreo {
       "foto_path": await compressPhoto(fotoPath),
       "foto_multiparametro": await compressPhoto(fotoMultiparametro),
       "foto_turbiedad": await compressPhoto(fotoTurbiedad),
+      "foto_caudal": await compressPhoto(fotoCaudal),
+      "foto_nivel_freatico": await compressPhoto(fotoNivelFreatico),
+      "foto_muestreo": await compressPhoto(fotoMuestreo),
     };
   }
 }

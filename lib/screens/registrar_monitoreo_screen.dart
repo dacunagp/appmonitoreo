@@ -55,10 +55,17 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   bool _isProcessingImage = false;
   bool _isProcessingMulti = false;
   bool _isProcessingTurb = false;
+  bool _isProcessingCaudal = false;
+  bool _isProcessingNivelFreatico = false;
+  bool _isProcessingMuestreo = false;
   DateTime? _fechaYHoraMuestreo; 
   String? _imagePath;
   String? _fotoMultiparametroPath;
   String? _fotoTurbiedadPath;
+  // Phase 115: New photographic backup paths
+  String? _fotoCaudalPath;
+  String? _fotoNivelFreaticoPath;
+  String? _fotoMuestreoPath;
   final ImagePicker _picker = ImagePicker();
   final ScreenshotController _screenshotController = ScreenshotController();
   double? _estacionLatitud;
@@ -104,6 +111,12 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   String? _equipoNivelSeleccionado;
   String? _tipoNivelPozoSeleccionado;
   DateTime? _fechaYHoraNivel;
+
+  // Phase 115: CAUDAL VARIABLES
+  int? _selectedEquipoCaudalId;
+  List<EquipoDetalle> _equiposCaudal = [];
+  final TextEditingController _caudalController = TextEditingController();
+  DateTime? _fechaHoraCaudal;
 
   // STATISTICAL VALIDATION
   bool _hasHistory = false;
@@ -226,6 +239,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'turbiedad': double.tryParse(_paramControllers['turbiedad']?.text ?? ''),
         'profundidad': double.tryParse(_paramControllers['profundidad']?.text ?? ''),
         'nivel': double.tryParse(_paramControllers['nivel']?.text ?? ''),
+        // Phase 115: Caudal & new photo columns
+        'equipo_caudal': _selectedEquipoCaudalId,
+        'nivel_caudal': double.tryParse(_caudalController.text.replaceAll(',', '.')),
+        'fecha_hora_caudal': _fechaHoraCaudal?.toIso8601String().replaceAll('T', ' ').split('.').first,
+        'foto_caudal': _fotoCaudalPath,
+        'foto_nivel_freatico': _fotoNivelFreaticoPath,
+        'foto_muestreo': _fotoMuestreoPath,
         'is_draft': isDraft ? 1 : 0,
       };
 
@@ -292,6 +312,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     _debounce?.cancel();
     _codLabController.dispose();
     _obsController.dispose();
+    _caudalController.dispose();
     
     for (var controller in _paramControllers.values) {
       controller.dispose();
@@ -313,6 +334,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       if (turbiData.isEmpty) {
         turbiData = await _dbHelper.getEquiposByType('Turbidimetro');
       }
+      // Phase 115: Fetch Molinete equipment for Caudal section
+      var caudalData = await _dbHelper.getEquiposByType('Molinete');
 
       // 2. Fetch Parameters (Catalog and Active)
       final allParams = await _dbHelper.getParametros();
@@ -352,6 +375,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _equiposMultiOptions = multiData.map((e) => e.codigo.toString()).toList();
         _turbidimetros = turbiData;
         _turbidimetrosOptions = turbiData.map((e) => e.codigo.toString()).toList();
+        _equiposCaudal = caudalData; // Phase 115
         _activeParameterKeys = activeKeys;
         _categorizedParams = categorized;
         _availableExtraParams = availableExtras;
@@ -588,6 +612,16 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       _imagePath = data['foto_path'];
       _fotoMultiparametroPath = data['foto_multiparametro'];
       _fotoTurbiedadPath = data['foto_turbiedad'];
+
+      // Phase 115: Restore Caudal & new photo fields
+      _selectedEquipoCaudalId = data['equipo_caudal'];
+      _caudalController.text = data['nivel_caudal']?.toString() ?? '';
+      if (data['fecha_hora_caudal'] != null) {
+        _fechaHoraCaudal = DateTime.parse(data['fecha_hora_caudal']);
+      }
+      _fotoCaudalPath = data['foto_caudal'];
+      _fotoNivelFreaticoPath = data['foto_nivel_freatico'];
+      _fotoMuestreoPath = data['foto_muestreo'];
 
       // Dynamic Lists (Phase 114)
       _selectedAdicionalesInstancias = adicionalesToLoad;
@@ -957,9 +991,147 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                     setState(() => _fechaYHoraNivel = DateTime(fecha.year, fecha.month, fecha.day, hora.hour, hora.minute));
                   },
                 )),
+                // Phase 115: Photo backup for Nivel Freático
+                IgnorePointer(
+                  ignoring: widget.isReadOnly,
+                  child: _buildEquipmentPhotoFullPreview(
+                    title: 'EVIDENCIA NIVEL FREÁTICO',
+                    path: _fotoNivelFreaticoPath,
+                    isProcessing: _isProcessingNivelFreatico,
+                    onTomarFoto: _tomarFotoNivelFreatico,
+                    onClear: () => setState(() => _fotoNivelFreaticoPath = null),
+                    onVerificar: () => _sharePhoto(_fotoNivelFreaticoPath!),
+                    isDarkMode: isDarkMode,
+                  ),
+                ),
                 const SizedBox(height: 16),
               ],
               leadingIcon: Icons.water_drop,
+            ),
+
+          // --- SECCIÓN 1.6: CAUDAL (Condicional: solo Aguas Superficiales) ---
+          if ((_matrizSeleccionada?.nombreMatriz == 'Aguas Superficiales') && !_isMonitoreoFallido)
+            _buildSectionTile(
+              'Caudal',
+              isDarkMode,
+              _selectedEquipoCaudalId != null && _caudalController.text.isNotEmpty && _fechaHoraCaudal != null,
+              [
+                // Equipo Caudal (Molinete)
+                IgnorePointer(
+                  ignoring: widget.isReadOnly,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedEquipoCaudalId,
+                      decoration: InputDecoration(
+                        labelText: 'Equipo Caudal (Molinete)',
+                        labelStyle: const TextStyle(color: Colors.blueAccent, fontSize: 13),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      items: _equiposCaudal.map((e) => DropdownMenuItem<int>(
+                        value: e.id,
+                        child: Text(e.codigo, style: const TextStyle(fontSize: 14)),
+                      )).toList(),
+                      onChanged: widget.isReadOnly ? null : (val) {
+                        setState(() => _selectedEquipoCaudalId = val);
+                        _saveAsDraft();
+                      },
+                      hint: const Text('Seleccione equipo Molinete'),
+                    ),
+                  ),
+                ),
+                // Nivel Caudal [L/s]
+                IgnorePointer(
+                  ignoring: widget.isReadOnly,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          _caudalController.text.isNotEmpty ? Icons.check_circle : Icons.cancel,
+                          color: _caudalController.text.isNotEmpty
+                              ? Colors.greenAccent
+                              : (isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400),
+                          size: 24,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextField(
+                            controller: _caudalController,
+                            readOnly: widget.isReadOnly,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+                            onChanged: (_) => setState(() {}),
+                            style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
+                            decoration: InputDecoration(
+                              labelText: 'Nivel Caudal [L/s]',
+                              hintText: 'Ingrese caudal',
+                              labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                              hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Fecha/Hora Caudal
+                IgnorePointer(
+                  ignoring: widget.isReadOnly,
+                  child: CustomFormRow(
+                    label: 'Fecha/Hora - Caudal',
+                    value: _fechaHoraCaudal == null
+                        ? 'Seleccione Fecha y Hora'
+                        : _formatearFechaYHora(_fechaHoraCaudal!),
+                    isValid: _fechaHoraCaudal != null,
+                    showArrow: false,
+                    isDarkMode: isDarkMode,
+                    onTap: () async {
+                      final now = DateTime.now();
+                      final today = DateTime(now.year, now.month, now.day);
+                      final initial = _fechaHoraCaudal ?? now;
+                      final safeFirstDate = initial.isBefore(today) ? initial : today;
+                      final DateTime? fecha = await showDatePicker(
+                        context: context,
+                        initialDate: initial,
+                        firstDate: safeFirstDate,
+                        lastDate: DateTime(2100),
+                      );
+                      if (!mounted || fecha == null) return;
+                      final TimeOfDay? hora = await showTimePicker(
+                        context: context,
+                        initialTime: _fechaHoraCaudal != null
+                            ? TimeOfDay.fromDateTime(_fechaHoraCaudal!)
+                            : TimeOfDay.now(),
+                      );
+                      if (!mounted || hora == null) return;
+                      setState(() => _fechaHoraCaudal = DateTime(
+                        fecha.year, fecha.month, fecha.day, hora.hour, hora.minute,
+                      ));
+                      _saveAsDraft();
+                    },
+                  ),
+                ),
+                // Photo backup for Caudal
+                IgnorePointer(
+                  ignoring: widget.isReadOnly,
+                  child: _buildEquipmentPhotoFullPreview(
+                    title: 'EVIDENCIA CAUDAL',
+                    path: _fotoCaudalPath,
+                    isProcessing: _isProcessingCaudal,
+                    onTomarFoto: _tomarFotoCaudal,
+                    onClear: () => setState(() => _fotoCaudalPath = null),
+                    onVerificar: () => _sharePhoto(_fotoCaudalPath!),
+                    isDarkMode: isDarkMode,
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              leadingIcon: Icons.water,
             ),
 
           // --- SECCIONES INFERIORES (Se ocultan si falla el monitoreo) ---
@@ -1323,6 +1495,19 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   );
                 },
               )),
+              // Phase 115: Photo backup for Muestreo (below Descripción)
+              IgnorePointer(
+                ignoring: widget.isReadOnly,
+                child: _buildEquipmentPhotoFullPreview(
+                  title: 'EVIDENCIA MUESTREO',
+                  path: _fotoMuestreoPath,
+                  isProcessing: _isProcessingMuestreo,
+                  onTomarFoto: _tomarFotoMuestreo,
+                  onClear: () => setState(() => _fotoMuestreoPath = null),
+                  onVerificar: () => _sharePhoto(_fotoMuestreoPath!),
+                  isDarkMode: isDarkMode,
+                ),
+              ),
               const SizedBox(height: 8),
             ]),
             const SizedBox(height: 16),
@@ -1730,10 +1915,50 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     }
   }
 
+  // Phase 115: New photo capture methods
+  Future<void> _tomarFotoCaudal() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image != null) {
+      Position? position = await _getCurrentLocation();
+      if (position != null) {
+        await _processImageWithStamp(File(image.path), position, target: 'caudal');
+      } else {
+        await _savePhotoWithoutStamp(File(image.path), 'caudal');
+      }
+    }
+  }
+
+  Future<void> _tomarFotoNivelFreatico() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image != null) {
+      Position? position = await _getCurrentLocation();
+      if (position != null) {
+        await _processImageWithStamp(File(image.path), position, target: 'nivel_freatico');
+      } else {
+        await _savePhotoWithoutStamp(File(image.path), 'nivel_freatico');
+      }
+    }
+  }
+
+  Future<void> _tomarFotoMuestreo() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    if (image != null) {
+      Position? position = await _getCurrentLocation();
+      if (position != null) {
+        await _processImageWithStamp(File(image.path), position, target: 'muestreo');
+      } else {
+        await _savePhotoWithoutStamp(File(image.path), 'muestreo');
+      }
+    }
+  }
+
   Future<void> _processImageWithStamp(File imageFile, Position position, {String target = 'general'}) async {
     if (target == 'general') setState(() => _isProcessingImage = true);
     else if (target == 'multi') setState(() => _isProcessingMulti = true);
     else if (target == 'turb') setState(() => _isProcessingTurb = true);
+    else if (target == 'caudal') setState(() => _isProcessingCaudal = true);
+    else if (target == 'nivel_freatico') setState(() => _isProcessingNivelFreatico = true);
+    else if (target == 'muestreo') setState(() => _isProcessingMuestreo = true);
 
     try {
       final String timestamp = _formatearFechaYHora(DateTime.now());
@@ -1878,6 +2103,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         if (target == 'general') _imagePath = filePath;
         else if (target == 'multi') _fotoMultiparametroPath = filePath;
         else if (target == 'turb') _fotoTurbiedadPath = filePath;
+        else if (target == 'caudal') _fotoCaudalPath = filePath;
+        else if (target == 'nivel_freatico') _fotoNivelFreaticoPath = filePath;
+        else if (target == 'muestreo') _fotoMuestreoPath = filePath;
       });
       // 🚨 PERSISTENCE FIX: Trigger draft save immediately after photo processing
       await _saveAsDraft();
@@ -1891,6 +2119,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           if (target == 'general') _isProcessingImage = false;
           else if (target == 'multi') _isProcessingMulti = false;
           else if (target == 'turb') _isProcessingTurb = false;
+          else if (target == 'caudal') _isProcessingCaudal = false;
+          else if (target == 'nivel_freatico') _isProcessingNivelFreatico = false;
+          else if (target == 'muestreo') _isProcessingMuestreo = false;
         });
       }
     }
@@ -1930,6 +2161,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         if (target == 'general') _imagePath = filePath;
         else if (target == 'multi') _fotoMultiparametroPath = filePath;
         else if (target == 'turb') _fotoTurbiedadPath = filePath;
+        else if (target == 'caudal') _fotoCaudalPath = filePath;
+        else if (target == 'nivel_freatico') _fotoNivelFreaticoPath = filePath;
+        else if (target == 'muestreo') _fotoMuestreoPath = filePath;
       });
       
       // 🚨 PERSISTENCE FIX: Trigger draft save
@@ -1942,6 +2176,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           _isProcessingImage = false;
           _isProcessingMulti = false;
           _isProcessingTurb = false;
+          _isProcessingCaudal = false;
+          _isProcessingNivelFreatico = false;
+          _isProcessingMuestreo = false;
         });
       }
     }
@@ -1980,7 +2217,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     required String title,
     required String? path,
     required bool isProcessing,
-    required VoidCallback onTomarFoto,
+    required Future<void> Function() onTomarFoto,
     required VoidCallback onClear,
     required VoidCallback onVerificar,
     required bool isDarkMode,
@@ -2028,7 +2265,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         child: SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: onTomarFoto,
+            onPressed: () async {
+              await onTomarFoto();
+            },
             icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
             label: const Text("CAPTURAR RESPALDO FOTOGRÁFICO", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
@@ -2089,7 +2328,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   TextButton.icon(
-                    onPressed: onTomarFoto,
+                    onPressed: () async {
+                      await onTomarFoto();
+                    },
                     icon: const Icon(Icons.refresh, color: Colors.blueAccent, size: 16),
                     label: const Text("RECAPTURAR", style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
