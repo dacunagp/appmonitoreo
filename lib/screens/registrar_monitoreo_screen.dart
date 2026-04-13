@@ -21,7 +21,16 @@ import 'chart_analysis_screen.dart';
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
   final bool isReadOnly;
-  const RegistrarMonitoreoScreen({super.key, this.registroId, this.isReadOnly = false});
+  final int? initialProgramId; // Phase 121
+  final int? initialStationId; // Phase 121
+
+  const RegistrarMonitoreoScreen({
+    super.key, 
+    this.registroId, 
+    this.isReadOnly = false,
+    this.initialProgramId,
+    this.initialStationId,
+  });
 
   @override
   State<RegistrarMonitoreoScreen> createState() => _RegistrarMonitoreoScreenState();
@@ -117,6 +126,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   List<EquipoDetalle> _equiposCaudal = [];
   final TextEditingController _caudalController = TextEditingController();
   DateTime? _fechaHoraCaudal;
+
+  // Phase 117: DYNAMIC UNITS FOR VIP FIELDS
+  String _unitProfundidad = 'm';
+  String _unitNivel = 'm';
+  String _unitCaudal = 'L/s';
 
   // STATISTICAL VALIDATION
   bool _hasHistory = false;
@@ -341,6 +355,20 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       final allParams = await _dbHelper.getParametros();
       final activeParams = await _dbHelper.getActiveParametros();
       
+      // Phase 117: Extract units for VIP parameters to avoid hardcoding labels
+      try {
+        final pProf = allParams.firstWhere((p) => p.claveInterna.toLowerCase() == 'profundidad');
+        _unitProfundidad = pProf.unidad;
+      } catch (_) {}
+      try {
+        final pNivel = allParams.firstWhere((p) => p.claveInterna.toLowerCase() == 'nivel');
+        _unitNivel = pNivel.unidad;
+      } catch (_) {}
+      try {
+        final pCaudal = allParams.firstWhere((p) => p.claveInterna.toLowerCase() == 'caudal');
+        _unitCaudal = pCaudal.unidad;
+      } catch (_) {}
+      
       // 3. Initialize ALL Controllers FIRST
       final Set<String> activeKeys = activeParams.map((p) => p.claveInterna).toSet();
       final Map<String, List<Parametro>> categorized = {};
@@ -361,7 +389,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       }
 
       final vipKeysList = ['profundidad', 'nivel', 'turbiedad'];
-      final availableExtras = allParams.where((p) {
+      final availableExtras = activeParams.where((p) {
         return !vipKeysList.contains(p.claveInterna.toLowerCase());
       }).toList();
 
@@ -380,24 +408,48 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _categorizedParams = categorized;
         _availableExtraParams = availableExtras;
 
-        // --- UX FEATURE (Phase 114): Auto-Populate Base Multiparameters ---
+        // --- Phase 114: Auto-Populate Base Multiparameters ---
         if (widget.registroId == null && _selectedMultiInstancias.isEmpty) {
           final baseKeys = ['ph', 'temperatura', 'conductividad', 'oxigeno'];
           for (var key in baseKeys) {
-            try {
-              final p = allParams.firstWhere((param) => param.claveInterna == key);
-              final controller = TextEditingController();
-              controller.addListener(_onFieldChanged);
-              
-              _selectedMultiInstancias.add(ParametroInstancia(
-                parametro: p, 
-                controller: controller, 
-                uniqueId: '${key}_initial_${DateTime.now().millisecondsSinceEpoch}'
-              ));
-            } catch (_) {}
+            // Check if the base parameter is active before auto-populating
+            if (activeKeys.contains(key)) {
+              try {
+                final p = allParams.firstWhere((param) => param.claveInterna == key);
+                final controller = TextEditingController();
+                controller.addListener(_onFieldChanged);
+                
+                _selectedMultiInstancias.add(ParametroInstancia(
+                  parametro: p, 
+                  controller: controller, 
+                  uniqueId: '${key}_initial_${DateTime.now().millisecondsSinceEpoch}'
+                ));
+              } catch (_) {}
+            }
           }
         }
       });
+
+      // --- Phase 121: Handle Pre-selection from Constructor ---
+      if (widget.registroId == null) {
+        if (widget.initialProgramId != null) {
+          try {
+            final p = _programas.firstWhere((prog) => prog.id == widget.initialProgramId);
+            await _onProgramaChanged(p.name);
+            
+            if (widget.initialStationId != null && _estaciones.isNotEmpty) {
+              try {
+                final s = _estaciones.firstWhere((stat) => stat.id == widget.initialStationId);
+                await _onStationChanged(s.name);
+              } catch (e) {
+                debugPrint('⚠️ Error pre-selecting station: $e');
+              }
+            }
+          } catch (e) {
+            debugPrint('⚠️ Error pre-selecting program: $e');
+          }
+        }
+      }
 
       // 4. If Edit Mode, Load Draft Data (Inject text into the controllers we just created)
       if (widget.registroId != null) {
@@ -951,7 +1003,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 )),
                 IgnorePointer(ignoring: widget.isReadOnly, child: CustomParametroInputRow(
                   isReadOnly: widget.isReadOnly,
-                  label: 'Nivel Freático [m]',
+                  label: 'Nivel Freático [$_unitNivel]',
                   hintText: 'Ingrese nivel',
                   isDarkMode: isDarkMode,
                   controller: _paramControllers['nivel']!,
@@ -1066,7 +1118,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                             onChanged: (_) => setState(() {}),
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
-                              labelText: 'Nivel Caudal [L/s]',
+                              labelText: 'Nivel Caudal [$_unitCaudal]',
                               hintText: 'Ingrese caudal',
                               labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
                               hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
@@ -1618,7 +1670,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: CustomParametroInputRow(
                 isReadOnly: widget.isReadOnly,
-                label: 'Profundidad de muestreo [m]', 
+                label: 'Profundidad de muestreo [$_unitProfundidad]', 
                 hintText: 'Ingrese profundidad', 
                 isDarkMode: isDarkMode, 
                 controller: _paramControllers['profundidad']!,

@@ -7,6 +7,8 @@ import '../models/models.dart';
 import 'package:flutter_map_cache/flutter_map_cache.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio_cache_interceptor_file_store/dio_cache_interceptor_file_store.dart';
+import 'registrar_monitoreo_screen.dart'; // Phase 121
+import 'monitoreos_screen.dart'; // Phase 124
 
 class CampanasScreen extends StatefulWidget {
   const CampanasScreen({super.key});
@@ -29,6 +31,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
   Map<int, int> _stationStatuses = {};
   String? _cachePath;
   String? _selectedLayerUrl;
+  final DraggableScrollableController _sheetController = DraggableScrollableController();
 
   String get _currentLayerUrl {
     if (_selectedLayerUrl != null) return _selectedLayerUrl!;
@@ -56,7 +59,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
       debugPrint('🗺️ [Inicio] Obteniendo estados de sincronización...');
       final Map<int, int> statuses = {};
       for (var s in stations) {
-        statuses[s.id] = await _dbHelper.getStationSyncStatus(s.id);
+        statuses[s.id] = await _dbHelper.getStationDetailedMonitoringStatus(s.id);
       }
       
       setState(() {
@@ -102,7 +105,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
         
         final Map<int, int> statuses = {};
         for (var s in stations) {
-          statuses[s.id] = await _dbHelper.getStationLatestSyncStatus(s.id);
+          statuses[s.id] = await _dbHelper.getStationDetailedMonitoringStatus(s.id);
         }
         setState(() {
           _filteredStations = stations;
@@ -128,6 +131,16 @@ class _CampanasScreenState extends State<CampanasScreen> {
   void _onStationChanged(int? stationId) {
     debugPrint('📌 [Selección Estación] ID: $stationId enfocando...');
     setState(() => _selectedStationId = stationId);
+    
+    // Collapse bottom sheet if attached (Phase 120.2 Fix)
+    if (_sheetController.isAttached) {
+      _sheetController.animateTo(
+        0.12, 
+        duration: const Duration(milliseconds: 300), 
+        curve: Curves.easeInOut,
+      );
+    }
+
     if (stationId != null) {
       final station = _allStations.firstWhere((s) => s.id == stationId);
       debugPrint('📌 [Selección Estación] Moviendo a ${station.name} (${station.latitude}, ${station.longitude})');
@@ -174,28 +187,56 @@ class _CampanasScreenState extends State<CampanasScreen> {
                 ],
               ),
               const Divider(height: 32),
-              _buildDetailRow(Icons.map, 'Coordenadas', '${station.latitude}, ${station.longitude}'),
-              const SizedBox(height: 16),
-              const Text(
-                'Detalles de la Estación:',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Esta estación forma parte del programa de monitoreo seleccionado. '
-                'Toque el botón inferior para ver el historial de esta estación.',
-                style: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[700]),
-              ),
+              _buildDetailRow(Icons.map, 'Coordenadas', '${station.latitude.toStringAsFixed(2)}, ${station.longitude.toStringAsFixed(2)}'),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
+                child: OutlinedButton.icon(
                   onPressed: () {
-                    // Navegación desactivada por requerimiento
-                    debugPrint('Navegación bloqueada para: ${station.name}');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => MonitoreosScreen(
+                          initialStationName: station.name,
+                        ),
+                      ),
+                    );
                   },
-                  icon: const Icon(Icons.history),
-                  label: const Text('VER HISTORIAL COMPLETO'),
+                  icon: const Icon(Icons.history, color: Colors.blueAccent),
+                  label: const Text('VER HISTORIAL DE ESTACIÓN', 
+                    style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.blueAccent, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    // Close the bottom sheet first
+                    Navigator.pop(context);
+                    
+                    // Navigate to registration with IDs
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RegistrarMonitoreoScreen(
+                          initialProgramId: _selectedProgramId,
+                          initialStationId: station.id,
+                        ),
+                      ),
+                    );
+                    
+                    // Refresh map markers when coming back (Phase 121)
+                    await _loadInitialData();
+                  },
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('REGISTRAR MONITOREO'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: theme.colorScheme.primary,
                     foregroundColor: Colors.white,
@@ -226,6 +267,36 @@ class _CampanasScreenState extends State<CampanasScreen> {
         ),
       ],
     );
+  }
+
+  Color _getStatusColor(int status) {
+    switch (status) {
+      case 1: return Colors.red;
+      case 2: return Colors.yellow[700]!; // Borrador
+      case 3: return Colors.green;
+      case 4: return Colors.orange;
+      default: return Colors.grey;
+    }
+  }
+
+  String _getStatusLabel(int status) {
+    switch (status) {
+      case 1: return 'FALLIDO';
+      case 2: return 'BORRADOR';
+      case 3: return 'ENVIADO';
+      case 4: return 'PENDIENTE';
+      default: return 'SIN INFO';
+    }
+  }
+
+  IconData _getStatusIcon(int status) {
+    switch (status) {
+      case 1: return Icons.error_outline;
+      case 2: return Icons.edit_note;
+      case 3: return Icons.check_circle_outline;
+      case 4: return Icons.pending_actions;
+      default: return Icons.help_outline;
+    }
   }
 
   @override
@@ -296,22 +367,8 @@ class _CampanasScreenState extends State<CampanasScreen> {
                       final bool isSelected = s.id == _selectedStationId;
                       final int syncStatus = _stationStatuses[s.id] ?? 0;
                       
-                      // Standard unselected color
-                      Color markerColor = Colors.red;
-
-                      // 🚨 Dynamic color mapping for the SELECTED station only (Phase 81)
-                      if (isSelected) {
-                        switch (syncStatus) {
-                          case 1: // Draft / Yellow
-                            markerColor = Colors.yellowAccent;
-                            break;
-                          case 2: // Sent / Green
-                            markerColor = Colors.green; 
-                            break;
-                          default: // No Record / Grey
-                            markerColor = Colors.grey; 
-                        }
-                      }
+                      // Dynamic color mapping (Phase 118 Sync)
+                      final Color markerColor = _getStatusColor(syncStatus);
 
                       return Marker(
                         point: LatLng(
@@ -444,14 +501,31 @@ class _CampanasScreenState extends State<CampanasScreen> {
                           dropdownColor: Colors.grey[900],
                           icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
                           style: const TextStyle(color: Colors.white, fontSize: 13),
-                          items: _filteredStations.map((s) => DropdownMenuItem<int>(
-                                value: s.id,
-                                child: Text(
-                                  s.name, 
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                              )).toList(),
+                          items: _filteredStations.map((s) {
+                                final int status = _stationStatuses[s.id] ?? 0;
+                                final Color dotColor = _getStatusColor(status);
+                                
+                                return DropdownMenuItem<int>(
+                                  value: s.id,
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          s.name, 
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(color: Colors.white),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
                           onChanged: _onStationChanged,
                         ),
                       ),
@@ -465,7 +539,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
               const Center(child: CircularProgressIndicator(color: Colors.white)),
 
             Positioned(
-              bottom: 20,
+              bottom: 120,
               left: 20,
               child: Column(
                 children: [
@@ -514,6 +588,142 @@ class _CampanasScreenState extends State<CampanasScreen> {
                   ),
                 ),
               ),
+            ),
+
+            // --- SECCIÓN: LISTA DE ESTACIONES DRAGGABLE (Phase 118) ---
+            DraggableScrollableSheet(
+              controller: _sheetController,
+              initialChildSize: 0.12,
+              minChildSize: 0.12,
+              maxChildSize: 0.7,
+              snap: true,
+              builder: (context, scrollController) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isDarkMode ? theme.colorScheme.surface : Colors.white,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 10,
+                        offset: const Offset(0, -2),
+                      ),
+                    ],
+                  ),
+                    child: CustomScrollView(
+                      controller: scrollController,
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 12),
+                              Container(
+                                width: 40,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[400],
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Row(
+                                  children: [
+                                    const Text(
+                                      'Estaciones',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      '${_filteredStations.length} encontradas',
+                                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.only(bottom: 20),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final s = _filteredStations[index];
+                                final status = _stationStatuses[s.id] ?? 0;
+                                final color = _getStatusColor(status);
+                                final label = _getStatusLabel(status);
+                                final icon = _getStatusIcon(status);
+                                final isSelected = s.id == _selectedStationId;
+
+                                return Card(
+                                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                                  elevation: isSelected ? 4 : 1,
+                                  clipBehavior: Clip.antiAlias,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: isSelected 
+                                      ? BorderSide(color: theme.colorScheme.primary, width: 2)
+                                      : BorderSide.none,
+                                    ),
+                                  child: InkWell(
+                                    onTap: () {
+                                      // 1. Reset list scroll position (Phase 120.2)
+                                      if (scrollController.hasClients) {
+                                        scrollController.jumpTo(0);
+                                      }
+                                      // 2. Center map and collapse panel
+                                      _onStationChanged(s.id);
+                                    },
+                                    onLongPress: () => _showStationDetails(s),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 8,
+                                          height: 80,
+                                          color: color,
+                                        ),
+                                        Expanded(
+                                          child: ListTile(
+                                            title: Text(
+                                              s.name,
+                                              style: const TextStyle(fontWeight: FontWeight.bold),
+                                            ),
+                                            subtitle: Text(
+                                              'Lat: ${s.latitude}, Lon: ${s.longitude}',
+                                              style: const TextStyle(fontSize: 12),
+                                            ),
+                                            trailing: Column(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              crossAxisAlignment: CrossAxisAlignment.end,
+                                              children: [
+                                                Icon(icon, color: color, size: 20),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  label,
+                                                  style: TextStyle(
+                                                    color: color,
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                              childCount: _filteredStations.length,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                );
+              },
             ),
           ],
         ),

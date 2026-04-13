@@ -148,10 +148,23 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     final TextEditingController _minController = TextEditingController();
     final TextEditingController _maxController = TextEditingController();
     
-    // Fase 109: Auto-generation logic for claveInterna
+    // Fase 109: Auto-generation logic for claveInterna + Phase 117: Unit Suggestion
     if (type == 'Parámetro' && !isEdit) {
       c1.addListener(() {
-        _claveController.text = _normalizeClave(c1.text);
+        final name = c1.text;
+        _claveController.text = _normalizeClave(name);
+        
+        // Phase 117: Suggest units based on name to avoid hardcoding mg/L everywhere
+        final lower = name.toLowerCase();
+        if (lower.contains('turbiedad')) {
+          _unidadController.text = 'NTU';
+        } else if (lower.contains('caudal')) {
+          _unidadController.text = 'L/s';
+        } else if (lower.contains('profundidad') || lower.contains('nivel')) {
+          _unidadController.text = 'm';
+        } else if (lower == 'ph') {
+          _unidadController.text = 'Adim.';
+        }
       });
     }
 
@@ -584,7 +597,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 id = item.id;
               } else if (type == 'Parámetro') {
                 title = item.nombreParametro;
-                subtitle = item.categoria ?? 'Sin Categoría';
+                subtitle = '${item.categoria ?? 'Sin Categoría'} [${item.unidad}]';
                 id = item.idParametro;
               } else if (type == 'Endpoint') {
                 title = item['nombre'] ?? 'S/N';

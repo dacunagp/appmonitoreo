@@ -721,6 +721,36 @@ class DatabaseHelper {
     return 2; // Sent -> Green
   }
 
+  /// Returns a detailed monitoring status (Phase 118 Sync):
+  /// 0 = Gray (No Record), 1 = Red (Failed), 2 = Yellow (Borrador), 3 = Green (Enviado), 4 = Orange (Pendiente)
+  Future<int> getStationDetailedMonitoringStatus(int stationId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> result = await db.query(
+      'monitoreos',
+      columns: ['monitoreo_fallido', 'is_draft', 'sync_status'],
+      where: 'estacion_id = ?',
+      whereArgs: [stationId],
+      orderBy: 'id DESC',
+      limit: 1,
+    );
+
+    if (result.isEmpty) return 0; // Gris (Sin información)
+
+    final r = result.first;
+    // Use the same criteria as monitoreos_screen.dart
+    final bool isFallido = r['monitoreo_fallido'] == 'true' || r['monitoreo_fallido'] == 1 || r['monitoreo_fallido'] == 'SI';
+    final int draftStatus = r['is_draft'] ?? 1;
+
+    if (isFallido) return 1; // Rojo (Fallido)
+    if (draftStatus == 1) return 2; // Amarillo (Borrador)
+    if (draftStatus == 0) return 4; // Naranja (Pendiente)
+    if (draftStatus == 2 || r['sync_status'] == 'success') return 3; // Verde (Enviado)
+    
+    return 0;
+  }
+
+
+
 
   Future<List<Map<String, dynamic>>> getHistorialMedicionesByMonitoreoId(int monitoreoId) async {
     final db = await database;
@@ -1485,9 +1515,9 @@ class DatabaseHelper {
     }).toList();
   }
 
-  /// Migración: Aplica categorías por defecto a todos los parámetros basándose en su nombre/clave.
+  /// Migración: Aplica categorías y unidades por defecto a todos los parámetros basándose en su nombre/clave.
   Future<void> migrateCategories() async {
-    await _log('🛠️ [MIGRACIÓN] Iniciando asignación de categorías por defecto...');
+    await _log('🛠️ [MIGRACIÓN] Iniciando asignación de categorías y unidades por defecto...');
     final db = await database;
     final List<Map<String, dynamic>> rows = await db.query('parametros');
     
@@ -1496,22 +1526,43 @@ class DatabaseHelper {
     
     for (var row in rows) {
       final String? currentCat = row['categoria']?.toString();
+      final String? currentUnit = row['unidad']?.toString();
       final String pName = row['nombre']?.toString() ?? '';
+      final String lowerName = pName.toLowerCase();
       
-      final String resolved = _resolveCategory(currentCat, pName);
+      // 1. Resolve Category
+      final String resolvedCat = _resolveCategory(currentCat, pName);
       
-      // We update if the category changed or was null/default
-      if (resolved != currentCat) {
-        batch.update('parametros', {'categoria': resolved}, where: 'id = ?', whereArgs: [row['id']]);
+      // 2. Resolve Unit (Standardization)
+      String? resolvedUnit = currentUnit;
+      if (lowerName.contains('turbiedad')) {
+        resolvedUnit = 'NTU';
+      } else if (lowerName.contains('caudal')) {
+        resolvedUnit = 'L/s';
+      } else if (lowerName.contains('profundidad')) {
+        resolvedUnit = 'm';
+      } else if (lowerName.contains('nivel')) {
+        resolvedUnit = 'm';
+      } else if (lowerName == 'ph') {
+        resolvedUnit = 'Adim.'; // Adimensional
+      }
+      
+      // 3. Update if anything changed
+      if (resolvedCat != currentCat || resolvedUnit != currentUnit) {
+        batch.update('parametros', {
+          'categoria': resolvedCat,
+          'unidad': resolvedUnit
+        }, where: 'id = ?', whereArgs: [row['id']]);
         count++;
       }
     }
     
     if (count > 0) {
       await batch.commit(noResult: true);
-      await _log('✅ [MIGRACIÓN] Corregidos $count parámetros con categorías sincronizadas.');
+      await _log('✅ [MIGRACIÓN] Corregidos $count parámetros con metadatos sincronizados.');
     } else {
       await _log('ℹ️ [MIGRACIÓN] No se encontraron parámetros para corregir.');
     }
   }
+
 }

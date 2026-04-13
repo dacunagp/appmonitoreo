@@ -10,7 +10,8 @@ import '../utils/security_utils.dart';
 import 'registrar_monitoreo_screen.dart';
 
 class MonitoreosScreen extends StatefulWidget {
-  const MonitoreosScreen({super.key});
+  final String? initialStationName; // Added for Phase 124
+  const MonitoreosScreen({super.key, this.initialStationName});
 
   @override
   State<MonitoreosScreen> createState() => _MonitoreosScreenState();
@@ -23,10 +24,17 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   List<Map<String, dynamic>> _filteredMonitoreos = [];
   final TextEditingController _searchController = TextEditingController();
   bool _sortAscending = false;
+  static const String _DELETE_PIN = "1234";
 
   @override
   void initState() {
     super.initState();
+    
+    // Phase 124: Apply initial filter if provided
+    if (widget.initialStationName != null) {
+      _searchController.text = widget.initialStationName!;
+    }
+
     _loadMonitoreos();
     _searchController.addListener(_filterMonitoreos);
   }
@@ -50,9 +58,9 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
       final data = await _dbHelper.getMonitoreosList();
       setState(() {
         _monitoreos = data;
-        _filteredMonitoreos = data;
         _isLoading = false;
       });
+      _filterMonitoreos(); // Phase 124: Apply current filter (including initial) to loaded data
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
@@ -249,8 +257,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                     color: Colors.white),
                               ),
                               confirmDismiss: (direction) async {
-                                final bool confirm = await SecurityUtils.requirePin(context);
-                                return confirm;
+                                return await _showDeletePinDialog();
                               },
                               onDismissed: (direction) async {
                                 await _dbHelper.deleteRegistroMonitoreo(item['id']);
@@ -334,8 +341,8 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                                       const SizedBox(width: 4),
                                       IconButton(
                                         icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                        onPressed: isSynced ? null : () => _deleteSingleRecord(item['id']),
-                                        tooltip: isSynced ? 'Registros enviados no se pueden eliminar' : 'Eliminar registro',
+                                        onPressed: () => _deleteSingleRecord(item['id']),
+                                        tooltip: 'Eliminar registro (requiere PIN)',
                                       ),
                                     ],
                                   ),
@@ -364,7 +371,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   }
 
   Future<void> _deleteSingleRecord(int id) async {
-    final bool isAuthorized = await SecurityUtils.requirePin(context);
+    final bool isAuthorized = await _showDeletePinDialog();
     if (!isAuthorized) return;
 
     try {
@@ -391,8 +398,8 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   }
 
   Future<void> _confirmarEliminarTodo(BuildContext context) async {
-    // 1. PIN Verification
-    final bool pinCorrecto = await SecurityUtils.requirePin(context);
+    // 1. PIN Verification (Phase 119)
+    final bool pinCorrecto = await _showDeletePinDialog();
     if (!pinCorrecto) return;
 
     // 2. Standard Final Confirmation
@@ -432,6 +439,60 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
       }
     }
   }
+
+  /// Custom PIN Dialog for Phase 119
+  Future<bool> _showDeletePinDialog() async {
+    final TextEditingController pinController = TextEditingController();
+    final bool? result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Se requiere PIN de Borrado'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ingrese el PIN para autorizar la eliminación del registro:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              obscureText: true,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'PIN de Borrado',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('CANCELAR'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (pinController.text == _DELETE_PIN) {
+                Navigator.pop(context, true);
+              } else {
+                Navigator.pop(context, false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('PIN incorrecto'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('BORRAR', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
 
 
   Future<void> _exportToCsvAndShare() async {
