@@ -728,6 +728,41 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     _saveAsDraft();
   }
 
+  // Phase 122: Conditional State Reset when Water Matrix changes
+  void _onMatrizChanged(String val) {
+    final newMatriz = _matrices.firstWhere((m) => m.nombreMatriz == val);
+    final bool wasSubterranea =
+        _matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false;
+    final bool isNowSubterranea =
+        newMatriz.nombreMatriz.toLowerCase().contains('subterránea');
+    final bool wasSuperficial =
+        _matrizSeleccionada?.nombreMatriz == 'Aguas Superficiales';
+    final bool isNowSuperficial = newMatriz.nombreMatriz == 'Aguas Superficiales';
+
+    setState(() {
+      _matrizSeleccionada = newMatriz;
+
+      // Clear Nivel Freático fields when switching away from Aguas Subterráneas
+      if (wasSubterranea && !isNowSubterranea) {
+        _equipoNivelSeleccionado = null;
+        _tipoNivelPozoSeleccionado = null;
+        _fechaYHoraNivel = null;
+        _paramControllers['nivel']?.clear();
+        _fotoNivelFreaticoPath = null;
+      }
+
+      // Clear Caudal fields when switching away from Aguas Superficiales
+      if (wasSuperficial && !isNowSuperficial) {
+        _selectedEquipoCaudalId = null;
+        _caudalController.clear();
+        _fechaHoraCaudal = null;
+        _fotoCaudalPath = null;
+      }
+    });
+
+    _saveAsDraft();
+  }
+
   Future<void> _updateHistoricalRanges(String stationName) async {
     try {
       final history = await _dbHelper.getHistorialMuestrasByStationName(stationName);
@@ -836,7 +871,22 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     };
   }
 
+  // Phase 124: Helper — true if ANY photo slot is still being watermarked.
+  bool get _isProcessingAnyImage =>
+      _isProcessingImage ||
+      _isProcessingMulti ||
+      _isProcessingTurb ||
+      _isProcessingCaudal ||
+      _isProcessingNivelFreatico ||
+      _isProcessingMuestreo;
+
   Future<void> _guardarMonitoreo() async {
+    // Phase 124: Block save while any watermark job is still running.
+    if (_isProcessingAnyImage) {
+      _showError('⏳ Espere a que la fotografía termine de procesarse antes de guardar.');
+      return;
+    }
+
     // 1. Strict Validation
     if (!_isFormularioCompleto) {
       if (_isMonitoreoFallido && _obsController.text.trim().isEmpty) {
@@ -1013,6 +1063,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   hasHistory: _hasHistory,
                   minAllowed: _parameterRanges['nivel']?['min'],
                   maxAllowed: _parameterRanges['nivel']?['max'],
+                  onChanged: _onFieldChanged,
                   onPulseTap: () => _navigateToChart('nivel', _paramControllers['nivel']!),
                 )),
                 // DYNAMIC: Removing previous loop from Section 2 (Fixed/Quemado logic)
@@ -1115,7 +1166,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                             readOnly: widget.isReadOnly,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
-                            onChanged: (_) => setState(() {}),
+                            onChanged: (_) {
+                              setState(() {});
+                              _onFieldChanged();
+                            },
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
                               labelText: 'Nivel Caudal [$_unitCaudal]',
@@ -1124,6 +1178,16 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                               hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
                               border: InputBorder.none,
                               isDense: true,
+                              suffixIcon: (!widget.isReadOnly && _caudalController.text.isNotEmpty)
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                                      onPressed: () {
+                                        _caudalController.clear();
+                                        setState(() {});
+                                        _onFieldChanged();
+                                      },
+                                    )
+                                  : null,
                             ),
                           ),
                         ),
@@ -1218,6 +1282,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                           hasHistory: _hasHistory,
                           minAllowed: _parameterRanges[inst.parametro.claveInterna]?['min'],
                           maxAllowed: _parameterRanges[inst.parametro.claveInterna]?['max'],
+                          onChanged: _onFieldChanged,
                           onPulseTap: () => _navigateToChart(inst.parametro.claveInterna, inst.controller),
                         ),
                       ),
@@ -1294,9 +1359,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   onVerificar: () => _sharePhoto(_fotoMultiparametroPath!),
                   isDarkMode: isDarkMode,
                 )),
+                const SizedBox(height: 16),
               ],
-              const SizedBox(height: 16),
             ]),
+            const SizedBox(height: 16),
 
             // --- SECCIÓN 4: PARÁMETROS ADICIONALES (Manual Builder Phase 103) ---
             _buildSectionTile('Parámetros Adicionales', isDarkMode, true, [
@@ -1316,6 +1382,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                         hasHistory: _hasHistory,
                         minAllowed: _parameterRanges[inst.parametro.claveInterna]?['min'],
                         maxAllowed: _parameterRanges[inst.parametro.claveInterna]?['max'],
+                        onChanged: _onFieldChanged,
                         onPulseTap: () => _navigateToChart(inst.parametro.claveInterna, inst.controller),
                       ),
                     ),
@@ -1390,7 +1457,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-            ], leadingIcon: Icons.add_chart),
+            ],
+            leadingIcon: Icons.add_chart,
+          ),
 
             // --- SECCIÓN 5: TURBIEDAD ---
             _buildSectionTile('Turbiedad', isDarkMode, _isTurbiedadComplete, [
@@ -1421,6 +1490,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                       minAllowed: _parameterRanges[p.claveInterna]?['min'],
                       maxAllowed: _parameterRanges[p.claveInterna]?['max'],
                       bypassValidation: true,
+                      onChanged: _onFieldChanged,
                       onPulseTap: () => _navigateToChart(p.claveInterna, _paramControllers[p.claveInterna]!),
                     ),
                   )).toList(),
@@ -1435,7 +1505,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   )),
                 ],
                 const SizedBox(height: 16),
-            ]),
+              ],
+            ),
             
             // --- SECCIÓN 4: MUESTREO ---
             _buildSectionTile('Muestreo', isDarkMode, _isMuestreoComplete, [
@@ -1561,20 +1632,27 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-            ]),
-            const SizedBox(height: 16),
-          ],
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
 
           // --- 5. BOTÓN DE GUARDAR ---
           if (!widget.isReadOnly)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
               child: OutlinedButton.icon(
-                onPressed: _isSaving ? null : _guardarMonitoreo,
-                icon: _isSaving 
+                // Phase 124: Also disable while any photo watermark is in progress.
+                onPressed: (_isSaving || _isProcessingAnyImage) ? null : _guardarMonitoreo,
+                icon: _isSaving
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.save_outlined, color: Colors.blueAccent),
-                label: Text(_isSaving ? 'GUARDANDO...' : 'GUARDAR', style: const TextStyle(color: Colors.blueAccent, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500)),
+                    : _isProcessingAnyImage
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
+                        : const Icon(Icons.save_outlined, color: Colors.blueAccent),
+                label: Text(
+                  _isSaving ? 'GUARDANDO...' : _isProcessingAnyImage ? 'PROCESANDO FOTO...' : 'GUARDAR',
+                  style: const TextStyle(color: Colors.blueAccent, fontSize: 16, letterSpacing: 1.2, fontWeight: FontWeight.w500),
+                ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.blueAccent, width: 1.5), 
                   padding: const EdgeInsets.symmetric(vertical: 16.0), 
@@ -1650,10 +1728,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             selectedValue: _matrizSeleccionada?.nombreMatriz,
             options: _matrices.map((m) => m.nombreMatriz).toList(),
             isDarkMode: isDarkMode,
-            onChanged: (val) {
-              setState(() => _matrizSeleccionada = _matrices.firstWhere((m) => m.nombreMatriz == val));
-              _saveAsDraft();
-            },
+            onChanged: _onMatrizChanged,
           ),
           
           CustomFormRow(
@@ -2180,9 +2255,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   Future<void> _savePhotoWithoutStamp(File tempFile, String target) async {
+    // Phase 124: Set only the correct processing flag for this target.
     if (target == 'general') setState(() => _isProcessingImage = true);
     else if (target == 'multi') setState(() => _isProcessingMulti = true);
     else if (target == 'turb') setState(() => _isProcessingTurb = true);
+    else if (target == 'caudal') setState(() => _isProcessingCaudal = true);
+    else if (target == 'nivel_freatico') setState(() => _isProcessingNivelFreatico = true);
+    else if (target == 'muestreo') setState(() => _isProcessingMuestreo = true);
 
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -2223,14 +2302,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     } catch (e) {
       debugPrint('Error saving photo without stamp: $e');
     } finally {
+      // Phase 124: Reset ONLY the flag for this specific target, never touch others.
       if (mounted) {
         setState(() {
-          _isProcessingImage = false;
-          _isProcessingMulti = false;
-          _isProcessingTurb = false;
-          _isProcessingCaudal = false;
-          _isProcessingNivelFreatico = false;
-          _isProcessingMuestreo = false;
+          if (target == 'general') _isProcessingImage = false;
+          else if (target == 'multi') _isProcessingMulti = false;
+          else if (target == 'turb') _isProcessingTurb = false;
+          else if (target == 'caudal') _isProcessingCaudal = false;
+          else if (target == 'nivel_freatico') _isProcessingNivelFreatico = false;
+          else if (target == 'muestreo') _isProcessingMuestreo = false;
         });
       }
     }
@@ -2401,8 +2481,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     }
   }
 
-  void _showPickImageOptions() {
-    _pickImage(ImageSource.camera);
+  // Phase 124: Must be async and await _pickImage so the caller can await it too.
+  Future<void> _showPickImageOptions() async {
+    await _pickImage(ImageSource.camera);
   }
 
   Widget _buildSectionTile(String title, bool isDarkMode, bool isComplete, List<Widget> children, {IconData leadingIcon = Icons.assignment_outlined}) {
@@ -2705,6 +2786,7 @@ class CustomParametroInputRow extends StatefulWidget {
   final double? maxAllowed;
   final bool hasHistory;
   final VoidCallback? onPulseTap; // Added for state persistence before navigation
+  final VoidCallback? onChanged; // 🚨 NEW: For draft saving triggers
 
   final String parameterKey; // e.g., 'nivel', 'ph', 'temperatura'
   final String selectedEstacion;
@@ -2726,6 +2808,7 @@ class CustomParametroInputRow extends StatefulWidget {
     this.maxAllowed,
     this.hasHistory = false,
     this.onPulseTap,
+    this.onChanged,
     this.bypassValidation = false, // Default to false to keep standard behavior
     this.isReadOnly = false,
   });
@@ -2840,7 +2923,10 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
               ],
-              onChanged: (val) => widget.onPulseTap != null ? null : setState(() {}),
+              onChanged: (val) {
+                setState(() {});
+                widget.onChanged?.call();
+              },
               style: TextStyle(color: widget.isDarkMode ? Colors.white : Colors.black),
               decoration: InputDecoration(
                 labelText: widget.label, // Floating label inside the field
@@ -2849,6 +2935,16 @@ class _CustomParametroInputRowState extends State<CustomParametroInputRow> {
                 hintStyle: TextStyle(color: widget.isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
                 border: InputBorder.none,
                 isDense: true,
+                suffixIcon: (!widget.isReadOnly && widget.controller.text.isNotEmpty)
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                        onPressed: () {
+                          widget.controller.clear();
+                          setState(() {});
+                          widget.onChanged?.call();
+                        },
+                      )
+                    : null,
                 errorText: _isOutOfRange 
                     ? (!widget.hasHistory || widget.minAllowed == null 
                         ? 'Anómalo: Sin historial' 
