@@ -26,7 +26,6 @@ import 'screens/estaciones_screen.dart';
 import 'screens/campanas_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/administracion_screen.dart';
-import 'screens/exportar_bd_screen.dart';
 import 'screens/api_config_screen.dart';
 import 'screens/security_lock_screen.dart';
 import 'screens/notificaciones_screen.dart';
@@ -251,7 +250,6 @@ class MonitoreoApp extends StatelessWidget {
         '/campanas': (context) => const CampanasScreen(),
         '/settings': (context) => const SettingsScreen(),
         '/administracion': (context) => const AdministracionScreen(),
-        '/exportar_bd': (context) => const ExportarBDScreen(),
         '/api_config': (context) => const ApiConfigScreen(),
         '/security_lock': (context) => const SecurityLockScreen(),
         '/notificaciones': (context) => const NotificacionesScreen(),

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../database/database_helper.dart';
 
 class SecurityUtils {
   static Future<bool> requirePin(BuildContext context) async {
     final TextEditingController pinController = TextEditingController();
-    final prefs = await SharedPreferences.getInstance();
+    final dbHelper = DatabaseHelper();
     
-    // Check 'app_pin', then fallback to legacy 'deletion_pin', default to '1234'
-    final String correctPin = prefs.getString('app_pin') ?? prefs.getString('deletion_pin') ?? '1234';
+    // Get PIN from SQLite (same as API config), fallback to '4567'
+    final String correctPin = await dbHelper.getPin() ?? '4567';
 
     final bool? result = await showDialog<bool>(
       context: context,

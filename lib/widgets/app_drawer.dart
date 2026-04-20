@@ -128,13 +128,6 @@ class AppDrawer extends StatelessWidget {
                   targetRoute: '/administracion',
                   isDarkMode: isDarkMode,
                 ),
-                _buildMenuItem(
-                  context,
-                  title: 'Exportar BD',
-                  icon: Icons.save_alt,
-                  targetRoute: '/exportar_bd',
-                  isDarkMode: isDarkMode,
-                ),
 
                 _buildMenuItem(
                   context,
