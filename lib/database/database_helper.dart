@@ -1535,16 +1535,18 @@ class DatabaseHelper {
       
       // 2. Resolve Unit (Standardization)
       String? resolvedUnit = currentUnit;
-      if (lowerName.contains('turbiedad')) {
-        resolvedUnit = 'NTU';
-      } else if (lowerName.contains('caudal')) {
-        resolvedUnit = 'L/s';
-      } else if (lowerName.contains('profundidad')) {
-        resolvedUnit = 'm';
-      } else if (lowerName.contains('nivel')) {
-        resolvedUnit = 'm';
-      } else if (lowerName == 'ph') {
-        resolvedUnit = 'Adim.'; // Adimensional
+      if (resolvedUnit == null || resolvedUnit.isEmpty || resolvedUnit == 'Adim.') {
+        if (lowerName.contains('turbiedad')) {
+          resolvedUnit = 'NTU';
+        } else if (lowerName.contains('caudal')) {
+          resolvedUnit = 'L/s';
+        } else if (lowerName.contains('profundidad')) {
+          resolvedUnit = 'm';
+        } else if (lowerName.contains('nivel')) {
+          resolvedUnit = 'm';
+        } else if (lowerName == 'ph') {
+          resolvedUnit = 'u.pH';
+        }
       }
       
       // 3. Update if anything changed

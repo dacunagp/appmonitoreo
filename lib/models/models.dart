@@ -472,9 +472,12 @@ class Monitoreo {
   Future<Map<String, dynamic>> toJsonForSync({
     required Future<String?> Function(String?) compressPhoto,
     List<Map<String, String>>? legacyDetalles,
+    Map<String, String>? unitsMap,
   }) async {
+    final Map<String, String> units = unitsMap ?? {};
     return {
-      "id": id,
+      // "id": id, // 🚨 REMOVED (PHASE 130) to prevent overwriting existing records on backend
+      "id_local": id, // 🚨 ADDED (PHASE 133) so FastAPI can track the local SQLite ID
       "device_id": "MOBILE-DATA",
       "programa_id": programaId,
       "estacion_id": estacionId,
@@ -506,8 +509,8 @@ class Monitoreo {
       "latitud": latitud,
       "longitud": longitud,
       // 🚀 DUAL-JSON ARCHITECTURE (PHASE 115)
-      "multiparametros_json": multiparametrosJson != null ? jsonDecode(multiparametrosJson!) : null,
-      "detalles_json": detallesJson != null ? jsonDecode(detallesJson!) : null,
+      "multiparametros_json": _transformToExplicitFormat(multiparametrosJson, units),
+      "detalles_json": _transformToExplicitFormat(detallesJson, units),
       "detalles": legacyDetalles ?? [], // Legacy support
       // 🖼️ HEAVY PAYLOAD (SEND AT THE END)
       "foto_path": await compressPhoto(fotoPath),
@@ -517,5 +520,34 @@ class Monitoreo {
       "foto_nivel_freatico": await compressPhoto(fotoNivelFreatico),
       "foto_muestreo": await compressPhoto(fotoMuestreo),
     };
+  }
+
+  /// Transforms [ {"key": val} ] to [ {"parametro": "key", "valor": val, "unidad": "..."} ]
+  List<Map<String, dynamic>> _transformToExplicitFormat(String? jsonStr, Map<String, String> unitsMap) {
+    if (jsonStr == null || jsonStr.isEmpty) return [];
+    try {
+      final List<dynamic> data = jsonDecode(jsonStr);
+      return data.map((item) {
+        if (item is Map<String, dynamic>) {
+          // If it's already in the correct format, return as is
+          if (item.containsKey('parametro') && item.containsKey('valor')) {
+            return item;
+          }
+          // Otherwise, transform {"key": val} to {"parametro": "key", "valor": val, "unidad": "..."}
+          if (item.isNotEmpty) {
+            final key = item.keys.first;
+            return {
+              "parametro": key,
+              "valor": item[key],
+              "unidad": unitsMap[key] ?? ''
+            };
+          }
+        }
+        return <String, dynamic>{};
+      }).where((m) => m.isNotEmpty).toList();
+    } catch (e) {
+      print('Error transforming JSON for Sync: $e');
+      return [];
+    }
   }
 }

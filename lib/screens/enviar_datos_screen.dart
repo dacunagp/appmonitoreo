@@ -191,6 +191,12 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
         headers['Authorization'] = 'Basic ${base64Encode(utf8.encode(auth))}';
       }
 
+      // 🗺️ FETCH UNITS MAP ONCE FOR ALL RECORDS (PHASE 127)
+      final List<Parametro> allParams = await _dbHelper.getParametros();
+      final Map<String, String> unitsMap = {
+        for (var p in allParams) p.claveInterna: p.unidad
+      };
+
       // --- LOGICA SECUENCIAL ---
       for (var record in _recordsPending) {
         if (_selectedIds.contains(record['id'])) {
@@ -208,6 +214,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             final item = await monitoreo.toJsonForSync(
               compressPhoto: _compressAndEncodeImage,
               legacyDetalles: formattedDetails,
+              unitsMap: unitsMap, // 🗺️ PASS UNITS HERE
             );
 
             final payload = {"monitoreos": [item]};

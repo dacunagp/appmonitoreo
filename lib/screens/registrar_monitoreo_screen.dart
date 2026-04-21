@@ -148,23 +148,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   bool get _isMultiparametroComplete {
-    if (_equipoMultiparametroSeleccionado == null) return false;
-    
-    // Phase 114: Check that core parameters exist in _selectedMultiInstancias and are filled
-    final coreKeys = ['ph', 'temperatura', 'conductividad', 'oxigeno'];
-    for (var key in coreKeys) {
-      final hasEntry = _selectedMultiInstancias.any((inst) => 
-        inst.parametro.claveInterna == key && inst.controller.text.isNotEmpty);
-      if (!hasEntry) return false;
-    }
-    
-    return _fotoMultiparametroPath != null;
+    return _equipoMultiparametroSeleccionado != null;
   }
 
   bool get _isTurbiedadComplete {
-    if (_turbidimetroSeleccionado == null) return false;
-    return (_paramControllers['turbiedad']?.text.isNotEmpty ?? false) && 
-           _fotoTurbiedadPath != null;
+    return _turbidimetroSeleccionado != null && (_paramControllers['turbiedad']?.text.isNotEmpty ?? false);
   }
 
   bool get _isNivelComplete {
@@ -720,9 +708,20 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     final station = _estaciones.firstWhere((s) => s.name == name);
     setState(() {
       _estacionSeleccionada = station;
+      // Fallback initially to station coordinates, will be updated by GPS if available
       _estacionLatitud = station.latitude;
       _estacionLongitud = station.longitude;
     });
+
+    // 📍 NEW: Fetch real GPS coordinates (Phase 129)
+    final position = await _getCurrentLocation();
+    if (position != null) {
+      setState(() {
+        _estacionLatitud = position.latitude;
+        _estacionLongitud = position.longitude;
+      });
+      debugPrint('📍 GPS ACTUALIZADO: ${_estacionLatitud}, ${_estacionLongitud}');
+    }
 
     await _updateHistoricalRanges(station.name);
     _saveAsDraft();
@@ -1739,6 +1738,34 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             isDarkMode: isDarkMode,
             onTap: _seleccionarFechaYHora, 
           ),
+
+          // 📍 GPS COORDINATES (Phase 129)
+          CustomFormRow(
+            label: 'Coordenadas (GPS)',
+            value: (_estacionLatitud != null && _estacionLongitud != null)
+                ? '${_estacionLatitud!.toStringAsFixed(6)}, ${_estacionLongitud!.toStringAsFixed(6)}'
+                : 'Obteniendo GPS...',
+            isValid: _estacionLatitud != null,
+            customIcon: Icons.location_on,
+            customIconColor: Colors.orangeAccent,
+            showArrow: false,
+            isDarkMode: isDarkMode,
+            onTap: () async {
+              final position = await _getCurrentLocation();
+              if (position != null) {
+                setState(() {
+                  _estacionLatitud = position.latitude;
+                  _estacionLongitud = position.longitude;
+                });
+                _saveAsDraft();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('✅ GPS Actualizado correctamente')),
+                  );
+                }
+              }
+            },
+          ),
           
           if (_activeParameterKeys.contains('profundidad'))
             Padding(
@@ -1955,8 +1982,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Los servicios de ubicación están desactivados.')),
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('GPS Desactivado'),
+            content: const Text('Por favor, active los servicios de ubicación para registrar las coordenadas reales del monitoreo.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))
+            ],
+          ),
         );
       }
       return null;
