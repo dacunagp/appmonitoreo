@@ -6,16 +6,17 @@ import '../widgets/app_drawer.dart';
 import '../utils/security_utils.dart';
 
 class AdministracionScreen extends StatefulWidget {
-  const AdministracionScreen({super.key});
+  final int initialIndex;
+  const AdministracionScreen({super.key, this.initialIndex = 0});
 
   @override
   State<AdministracionScreen> createState() => _AdministracionScreenState();
 }
 
 class _AdministracionScreenState extends State<AdministracionScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final DatabaseHelper _dbHelper = DatabaseHelper();
   final ApiService _apiService = ApiService();
-  late TabController _tabController;
   bool _isLoading = true;
   bool _isSyncing = false;
 
@@ -27,7 +28,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<Map<String, dynamic>> _equipos = [];
   List<TipoEquipo> _tiposEquipo = [];
   List<Parametro> _parametros = [];
-  List<Map<String, dynamic>> _endpoints = [];
+  List<Map<String, dynamic>> _observaciones = [];
   String _searchQuery = '';
   int? _selectedProgramaFilter;
 
@@ -40,7 +41,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {
@@ -91,7 +92,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       final equipos = await _dbHelper.getAllEquiposWithTipo();
       final tiposEquipo = await _dbHelper.getTiposEquipo();
       final parametros = await _dbHelper.getParametros();
-      final endpoints = await _dbHelper.getEndpoints();
+      final observaciones = await _dbHelper.getObservacionesPredefinidasCompleto();
 
       setState(() {
         _usuarios = usuarios;
@@ -102,7 +103,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _equipos = equipos; 
         _tiposEquipo = tiposEquipo; 
         _parametros = parametros;
-        _endpoints = endpoints;
+        _observaciones = observaciones;
         _isLoading = false;
       });
     } catch (e) {
@@ -206,8 +207,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         } else {
           selectedCategoria = null; // Force user to pick a valid one
         }
-      } else if (type == 'Endpoint') {
-        c1.text = item['nombre'] ?? '';
+      } else if (type == 'Observación') {
+        c1.text = item['texto'] ?? '';
       }
     }
 
@@ -302,8 +303,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       ],
                     ),
                   ],
-                ] else if (type == 'Endpoint') ...[
-                  TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre del Endpoint')),
+                ] else if (type == 'Observación') ...[
+                  TextField(controller: c1, decoration: const InputDecoration(labelText: 'Texto de la Observación')),
                 ],
               ],
             ),
@@ -410,10 +411,10 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                       categoria: selectedCategoria,
                     );
                     isEdit ? await _dbHelper.updateParametro(p) : await _dbHelper.addParametro(p);
-                  } else if (type == 'Endpoint') {
-                    final name = c1.text.trim();
-                    if (name.isEmpty) throw Exception('El nombre no puede estar vacío');
-                    isEdit ? await _dbHelper.updateEndpoint(item['id'], name) : await _dbHelper.addEndpoint(name);
+                  } else if (type == 'Observación') {
+                    final text = c1.text.trim();
+                    if (text.isEmpty) throw Exception('El texto no puede estar vacío');
+                    isEdit ? await _dbHelper.updateObservacionPredefinida(item['id'], text) : await _dbHelper.addObservacionPredefinida(text);
                   }
                   if (mounted) Navigator.pop(context);
                   _loadAllData();
@@ -450,7 +451,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               else if (type == 'Estación') await _dbHelper.deleteStation(id);
               else if (type == 'Equipo') await _dbHelper.deleteEquipo(id);
               else if (type == 'Parámetro') await _dbHelper.deleteParametro(id);
-              else if (type == 'Endpoint') await _dbHelper.deleteEndpoint(id);
+              else if (type == 'Observación') await _dbHelper.deleteObservacionPredefinida(id);
               if (mounted) Navigator.pop(context);
               _loadAllData();
             },
@@ -504,6 +505,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               Tab(text: 'Programas'),
               Tab(text: 'Equipos'),
               Tab(text: 'Parámetros'),
+              Tab(text: 'Observaciones'),
             ],
           ),
         ),
@@ -518,11 +520,12 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   _buildTabList(_programas, 'Programa'),
                   _buildEquiposTab(),
                   _buildTabList(_parametros, 'Parámetro'),
+                  _buildTabList(_observaciones, 'Observación'),
                 ],
               ),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
-            final types = ['Método', 'Matriz', 'Programa', 'Equipo', 'Parámetro'];
+            final types = ['Método', 'Matriz', 'Programa', 'Equipo', 'Parámetro', 'Observación'];
             _showFormDialog(type: types[_tabController.index]);
           },
           child: const Icon(Icons.add),
@@ -547,8 +550,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         searchField = item.name;
       } else if (type == 'Parámetro') {
         searchField = item.nombreParametro;
-      } else if (type == 'Endpoint') {
-        searchField = item['nombre'] ?? '';
+      } else if (type == 'Observación') {
+        searchField = item['texto'] ?? '';
       }
       return searchField.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
@@ -599,8 +602,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                 title = item.nombreParametro;
                 subtitle = '${item.categoria ?? 'Sin Categoría'} [${item.unidad}]';
                 id = item.idParametro;
-              } else if (type == 'Endpoint') {
-                title = item['nombre'] ?? 'S/N';
+              } else if (type == 'Observación') {
+                title = item['texto'] ?? 'S/N';
                 subtitle = '';
                 id = item['id'];
               }

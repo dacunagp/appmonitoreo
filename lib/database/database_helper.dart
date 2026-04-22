@@ -102,7 +102,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 13, // 🚀 BUMP A VERSIÓN 13 (PHASE 115 - CAUDAL + PHOTOGRAPHIC BACKUPS)
+      version: 15, // 🚀 BUMP A VERSIÓN 15 (AGREGAR ENDPOINT OBSERVACIONES)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -216,6 +216,34 @@ class DatabaseHelper {
       }
       await _log('✅ [UPGRADE v13] Columnas Phase 115 agregadas exitosamente.');
     }
+
+    if (oldVersion < 14) {
+      try {
+        await _log('🚀 [UPGRADE] Creando tabla observaciones_predefinidas (Phase 142)...');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS observaciones_predefinidas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            texto TEXT NOT NULL
+          )
+        ''');
+        await _log('✅ [UPGRADE v14] Tabla observaciones_predefinidas creada exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v14] Error creando tabla observaciones_predefinidas: $e');
+      }
+    }
+
+    if (oldVersion < 15) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando endpoint por defecto "catalogos/observaciones"...');
+        var res = await db.rawQuery("SELECT id FROM endpoints WHERE nombre = ?", ['observaciones_predefinidas']);
+        if (res.isEmpty) {
+          await db.insert('endpoints', {'nombre': 'observaciones_predefinidas'});
+          await _log('✅ [UPGRADE v15] Endpoint "observaciones_predefinidas" agregado exitosamente.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v15] Error agregando endpoint: $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -263,7 +291,7 @@ class DatabaseHelper {
           nombre TEXT NOT NULL
         )
       ''');
-      final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos', 'muestras'];
+      final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos', 'muestras', 'observaciones_predefinidas'];
       for (String ep in defaultEndpoints) {
         await db.insert('endpoints', {'nombre': ep});
       }
@@ -274,6 +302,36 @@ class DatabaseHelper {
       await _log('🏗️ [MIGRATION] Creando tabla security para base de datos existente...');
       await db.execute('CREATE TABLE security (id INTEGER PRIMARY KEY AUTOINCREMENT, pin TEXT NOT NULL)');
       await db.insert('security', {'pin': '4567'});
+    }
+
+    res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='observaciones_predefinidas'");
+    if (res.isEmpty) {
+      await _log('🏗️ [MIGRATION] Creando tabla observaciones_predefinidas para base de datos existente...');
+      await db.execute('''
+        CREATE TABLE observaciones_predefinidas (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          texto TEXT NOT NULL
+        )
+      ''');
+    }
+
+    // --- CORRECCIÓN DINÁMICA DE ENDPOINTS (Forzar observaciones_predefinidas) ---
+    try {
+      var resObs = await db.rawQuery("SELECT id FROM endpoints WHERE nombre = ?", ['observaciones_predefinidas']);
+      if (resObs.isEmpty) {
+        await db.insert('endpoints', {'nombre': 'observaciones_predefinidas'});
+        await _log('✅ [FIX] Endpoint "observaciones_predefinidas" asegurado.');
+      }
+      // Eliminar versiones incorrectas que causan 404
+      int deletedCount = await db.delete('endpoints', 
+        where: "nombre = ? OR nombre = ? OR nombre = ?", 
+        whereArgs: ['catalogos/observaciones', 'catalogos_observaciones', 'catalogos_observación']
+      );
+      if (deletedCount > 0) {
+        await _log('🧹 [FIX] Se eliminaron $deletedCount endpoints antiguos/incorrectos.');
+      }
+    } catch (e) {
+      await _log('⚠️ [FIX] Error corrigiendo endpoints: $e');
     }
   }
 
@@ -410,7 +468,7 @@ class DatabaseHelper {
       )
     ''');
 
-    final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos', 'muestras'];
+    final List<String> defaultEndpoints = ['campanas', 'usuarios', 'metodos', 'matriz_aguas', 'equipos', 'parametros', 'sync/monitoreos', 'muestras', 'observaciones_predefinidas'];
     for (String ep in defaultEndpoints) {
       await db.insert('endpoints', {'nombre': ep});
     }
@@ -423,6 +481,14 @@ class DatabaseHelper {
         mensaje TEXT,
         payload TEXT,
         fecha TEXT
+      )
+    ''');
+
+    // 8. Observaciones Predefinidas
+    await db.execute('''
+      CREATE TABLE observaciones_predefinidas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        texto TEXT NOT NULL
       )
     ''');
 
@@ -799,6 +865,45 @@ class DatabaseHelper {
   Future<int> deleteAllRegistrosMonitoreo() async {
     final db = await database;
     return await db.delete('monitoreos');
+  }
+
+  // --- MÉTODOS PARA OBSERVACIONES PREDEFINIDAS (Phase 142) ---
+  Future<void> saveObservacionesPredefinidasBatch(List<String> observaciones) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('observaciones_predefinidas');
+      final Batch batch = txn.batch();
+      for (var obs in observaciones) {
+        batch.insert('observaciones_predefinidas', {'texto': obs});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getObservacionesPredefinidasCompleto() async {
+    final db = await database;
+    return await db.query('observaciones_predefinidas');
+  }
+
+  Future<List<String>> getObservacionesPredefinidas() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('observaciones_predefinidas');
+    return maps.map((map) => map['texto'] as String).toList();
+  }
+
+  Future<int> addObservacionPredefinida(String texto) async {
+    final db = await database;
+    return await db.insert('observaciones_predefinidas', {'texto': texto});
+  }
+
+  Future<int> updateObservacionPredefinida(int id, String texto) async {
+    final db = await database;
+    return await db.update('observaciones_predefinidas', {'texto': texto}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> deleteObservacionPredefinida(int id) async {
+    final db = await database;
+    return await db.delete('observaciones_predefinidas', where: 'id = ?', whereArgs: [id]);
   }
   
   Future<int> saveMonitoreoTransaction(Map<String, dynamic> header, List<Map<String, dynamic>> detalles) async {

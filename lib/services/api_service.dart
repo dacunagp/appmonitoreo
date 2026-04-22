@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
 
@@ -61,18 +62,44 @@ class ApiService {
     if (endpoints.isEmpty) throw Exception('No hay endpoints configurados para sincronizar.');
 
     try {
-      final responses = await Future.wait(
-        endpoints.map((e) => http.get(
-          Uri.parse('$baseUrl$e'),
+      // Usaremos un bucle individual para tener más control sobre los errores y reintentos
+      for (String endpoint in endpoints) {
+        String currentEndpoint = endpoint;
+        final String fullUrl = '$baseUrl$currentEndpoint';
+        debugPrint('🌐 [SYNC] Petición a: $fullUrl');
+
+        var response = await http.get(
+          Uri.parse(fullUrl),
           headers: {'Authorization': basicAuth},
-        )),
-      );
+        ).timeout(const Duration(seconds: 30));
 
-      for (int i = 0; i < endpoints.length; i++) {
-        if (responses[i].statusCode != 200) continue;
+        // --- LÓGICA DE REINTENTO PARA OBSERVACIONES ---
+        // Si falla con 404 y es el endpoint de observaciones, intentamos con el path alternativo
+        if (response.statusCode == 404 && currentEndpoint.toLowerCase().contains('observacion')) {
+          final String fallbackEndpoint = currentEndpoint.contains('/') 
+              ? 'observaciones_predefinidas' 
+              : 'catalogos/observaciones';
+          
+          debugPrint('🔄 [SYNC-RETRY] 404 en $currentEndpoint. Intentando con: $baseUrl$fallbackEndpoint');
+          
+          response = await http.get(
+            Uri.parse('$baseUrl$fallbackEndpoint'),
+            headers: {'Authorization': basicAuth},
+          ).timeout(const Duration(seconds: 30));
+          
+          if (response.statusCode == 200) {
+            currentEndpoint = fallbackEndpoint;
+            debugPrint('✅ [SYNC-RETRY] Éxito con el path alternativo: $fallbackEndpoint');
+          }
+        }
 
-        final decodedBody = json.decode(responses[i].body);
-        final endpointName = endpoints[i].toLowerCase();
+        if (response.statusCode != 200) {
+          debugPrint('❌ [SYNC-ERROR] $currentEndpoint falló (${response.statusCode})');
+          continue;
+        }
+
+        final decodedBody = json.decode(response.body);
+        final endpointName = currentEndpoint.toLowerCase();
 
         // 1. Process Campañas / Programas
         if (endpointName.contains('campana')) {
@@ -80,7 +107,6 @@ class ApiService {
           final programs = listItems.map<Program>((j) => Program.fromJson(j)).toList();
           await _dbHelper.saveProgramsBatch(programs);
           
-          // Also save stations for each program if nested
           for (var item in listItems) {
             final progId = item['id_campana'] ?? item['id'] ?? 0;
             final stationsJson = item['estaciones'] as List? ?? [];
@@ -118,7 +144,6 @@ class ApiService {
           List<Map<String, dynamic>> flatEquipos = [];
           
           for (var item in listItems) {
-            // Si el item contiene una lista 'equipos', es el formato antiguo agrupado
             if (item is Map && item.containsKey('equipos') && item['equipos'] is List) {
               final tipo = item['tipo'] ?? 'General';
               final eqs = item['equipos'] as List;
@@ -131,7 +156,6 @@ class ApiService {
                 });
               }
             } else {
-              // Formato plano (FastAPI)
               flatEquipos.add({
                 'id': item['id_equipo'] ?? item['id'] ?? 0,
                 'codigo': item['codigo_equipo'] ?? item['codigo'] ?? 'S/N',
@@ -148,6 +172,32 @@ class ApiService {
           final listItems = _asList(decodedBody, 'parametros');
           final params = listItems.map<Parametro>((j) => Parametro.fromJson(j)).toList();
           await _dbHelper.saveParametrosBatch(params);
+        }
+
+        // 7. Process Observaciones Predefinidas (Phase 142)
+        if (endpointName.contains('observacion')) {
+          debugPrint('📥 [DEBUG-SYNC] Respuesta de $endpointName: ${response.body}');
+          
+          var listItems = _asList(decodedBody, 'observaciones');
+          if (listItems.isEmpty) {
+            listItems = _asList(decodedBody, 'observaciones_predefinidas');
+          }
+          
+          List<String> observaciones = [];
+          for (var item in listItems) {
+            if (item is String) {
+              observaciones.add(item);
+            } else if (item is Map) {
+              final val = item['texto'] ?? item['observacion'] ?? item['nombre'];
+              if (val != null) observaciones.add(val.toString());
+            }
+          }
+          if (observaciones.isNotEmpty) {
+            await _dbHelper.saveObservacionesPredefinidasBatch(observaciones);
+            debugPrint('✅ [SYNC-OBS] Se guardaron ${observaciones.length} observaciones.');
+          } else {
+            debugPrint('⚠️ [SYNC-OBS] No se encontraron observaciones en la respuesta.');
+          }
         }
       }
     } catch (e) {

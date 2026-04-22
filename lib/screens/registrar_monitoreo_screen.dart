@@ -12,10 +12,13 @@ import 'package:share_plus/share_plus.dart';
 import '../widgets/app_drawer.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
+import 'administracion_screen.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:utm/utm.dart';
+import 'package:intl/intl.dart';
 import 'chart_analysis_screen.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
@@ -59,6 +62,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isMonitoreoFallido = false;
+  bool _showManualObservation = false; // Phase 144
   int? _currentRegistroId;
   Timer? _debounce;
   bool _isProcessingImage = false;
@@ -91,6 +95,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   List<String> _inspectoresOptions = [];
   List<String> _equiposMultiOptions = [];
   List<String> _turbidimetrosOptions = [];
+  List<String> _observacionesPredefinidas = []; // Phase 142
 
   // Selecciones (Objetos o IDs para lógica interna)
   Program? _programaSeleccionado;
@@ -103,6 +108,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   // Controllers para inputs numéricos y texto
   final TextEditingController _codLabController = TextEditingController();
   final TextEditingController _obsController = TextEditingController();
+  final FocusNode _obsFocusNode = FocusNode();
   
   // DYNAMIC PARAMETER MANAGEMENT (Phase 94)
   final Map<String, TextEditingController> _paramControllers = {};
@@ -338,6 +344,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       }
       // Phase 115: Fetch Molinete equipment for Caudal section
       var caudalData = await _dbHelper.getEquiposByType('Molinete');
+      final observaciones = await _dbHelper.getObservacionesPredefinidas(); // Phase 142
 
       // 2. Fetch Parameters (Catalog and Active)
       final allParams = await _dbHelper.getParametros();
@@ -391,6 +398,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _equiposMultiOptions = multiData.map((e) => e.codigo.toString()).toList();
         _turbidimetros = turbiData;
         _turbidimetrosOptions = turbiData.map((e) => e.codigo.toString()).toList();
+        _observacionesPredefinidas = observaciones; // Phase 142
         _equiposCaudal = caudalData; // Phase 115
         _activeParameterKeys = activeKeys;
         _categorizedParams = categorized;
@@ -928,6 +936,102 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     );
   }
 
+  void _addObservationText(String text) {
+    final currentText = _obsController.text;
+    if (currentText.isEmpty) {
+      _obsController.text = text;
+    } else {
+      _obsController.text = '$currentText $text';
+    }
+    _obsController.selection = TextSelection.fromPosition(TextPosition(offset: _obsController.text.length));
+  }
+
+  void _showObservationSelectionDialog() {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final List<String> options = List.from(_observacionesPredefinidas);
+    if (!options.contains('Otro')) options.add('Otro');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        String searchQuery = '';
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final filteredOptions = options.where((o) => o.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+            
+            return AlertDialog(
+              title: const Text('Seleccionar Observación'),
+              contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Buscar observación...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      onChanged: (val) => setDialogState(() => searchQuery = val),
+                    ),
+                    const SizedBox(height: 8),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: filteredOptions.length,
+                        itemBuilder: (context, index) {
+                          final obs = filteredOptions[index];
+                          return ListTile(
+                            title: Text(obs),
+                            onTap: () {
+                              Navigator.pop(context);
+                              if (obs == 'Otro') {
+                                setState(() => _showManualObservation = true);
+                                _obsFocusNode.requestFocus();
+                              } else {
+                                setState(() => _showManualObservation = true);
+                                _addObservationText(obs);
+                              }
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildObservationSelector(bool isDarkMode) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: widget.isReadOnly ? null : _showObservationSelectionDialog,
+          icon: const Icon(Icons.list_alt, color: Colors.white, size: 20),
+          label: const Text('SELECCIONAR OBSERVACIÓN RÁPIDA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blueAccent,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -958,12 +1062,14 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         actions: [
           PopupMenuButton<String>(
             onSelected: (value) async {
-              if (value == 'admin_params') {
-                // Force save draft before leaving
+              if (value == 'admin_params' || value == 'admin_obs') {
                 await _saveAsDraft();
                 if (!mounted) return;
-                // Pass the tab index for 'Parámetros' (index 4)
-                Navigator.pushNamed(context, '/administracion', arguments: {'initialTab': 4}); 
+                int tabIndex = (value == 'admin_params') ? 4 : 5;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => AdministracionScreen(initialIndex: tabIndex)),
+                ).then((_) => _loadDropdownData());
               }
             },
             itemBuilder: (BuildContext context) {
@@ -975,6 +1081,16 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                       Icon(Icons.settings_input_component, color: Colors.blueAccent),
                       SizedBox(width: 8),
                       Text('Administrar Parámetros'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'admin_obs',
+                  child: Row(
+                    children: [
+                      Icon(Icons.speaker_notes, color: Colors.blueAccent),
+                      SizedBox(width: 8),
+                      Text('Administrar Observaciones'),
                     ],
                   ),
                 ),
@@ -1579,6 +1695,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               const Divider(height: 1),
               const SizedBox(height: 16),
               // REACTIVE Descripción / Observación
+              if (_showManualObservation || _obsController.text.isNotEmpty)
               IgnorePointer(ignoring: widget.isReadOnly, child: ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _obsController,
                 builder: (context, value, child) {
@@ -1600,6 +1717,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                         Expanded(
                           child: TextField(
                             controller: _obsController,
+                            focusNode: _obsFocusNode,
                             maxLines: 2,
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
@@ -1617,6 +1735,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   );
                 },
               )),
+              IgnorePointer(ignoring: widget.isReadOnly, child: _buildObservationSelector(isDarkMode)),
               // Phase 115: Photo backup for Muestreo (below Descripción)
               IgnorePointer(
                 ignoring: widget.isReadOnly,
@@ -1739,33 +1858,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             onTap: _seleccionarFechaYHora, 
           ),
 
-          // 📍 GPS COORDINATES (Phase 129)
-          CustomFormRow(
-            label: 'Coordenadas (GPS)',
-            value: (_estacionLatitud != null && _estacionLongitud != null)
-                ? '${_estacionLatitud!.toStringAsFixed(6)}, ${_estacionLongitud!.toStringAsFixed(6)}'
-                : 'Obteniendo GPS...',
-            isValid: _estacionLatitud != null,
-            customIcon: Icons.location_on,
-            customIconColor: Colors.orangeAccent,
-            showArrow: false,
-            isDarkMode: isDarkMode,
-            onTap: () async {
-              final position = await _getCurrentLocation();
-              if (position != null) {
-                setState(() {
-                  _estacionLatitud = position.latitude;
-                  _estacionLongitud = position.longitude;
-                });
-                _saveAsDraft();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('✅ GPS Actualizado correctamente')),
-                  );
-                }
-              }
-            },
-          ),
+
           
           if (_activeParameterKeys.contains('profundidad'))
             Padding(
@@ -1808,6 +1901,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               valueListenable: _obsController,
             builder: (context, value, child) {
               final bool hasText = value.text.trim().isNotEmpty;
+              if (!_showManualObservation && !hasText) return const SizedBox.shrink();
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
                 child: Row(
@@ -1825,6 +1919,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                     Expanded(
                       child: TextField(
                         controller: _obsController,
+                        focusNode: _obsFocusNode,
                         maxLines: 2,
                         style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                         decoration: InputDecoration(
@@ -1842,6 +1937,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               );
             },
             ),
+          if (_isMonitoreoFallido)
+            IgnorePointer(ignoring: widget.isReadOnly, child: _buildObservationSelector(isDarkMode)),
           
           IgnorePointer(ignoring: widget.isReadOnly, child: _buildPhotoPreview(isDarkMode)),
           
@@ -2018,7 +2115,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       return null;
     }
 
-    return await Geolocator.getCurrentPosition();
+    Position position = await Geolocator.getCurrentPosition();
+    if (mounted) {
+      setState(() {
+        _estacionLatitud = position.latitude;
+        _estacionLongitud = position.longitude;
+      });
+      _saveAsDraft();
+    }
+    return position;
   }
 
   Future<void> _pickImage(ImageSource source, {String target = 'general'}) async {
@@ -2123,8 +2228,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
     try {
       final String timestamp = _formatearFechaYHora(DateTime.now());
-      final String lat = position.latitude.toStringAsFixed(6);
-      final String lon = position.longitude.toStringAsFixed(6);
+      final utm = UTM.fromLatLon(lat: position.latitude, lon: position.longitude);
+      final NumberFormat nf = NumberFormat('#,##0.00', 'es_ES');
+      final String utmString = "UTM: ${nf.format(utm.easting)}E ${nf.format(utm.northing)}N";
       final String estacion = (_estacionSeleccionada?.name ?? "PUNTO DE CONTROL NO ESPECIFICADO").toUpperCase();
 
       final Uint8List mainBytes = await imageFile.readAsBytes();
@@ -2142,7 +2248,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       final double margin = imgWidth * 0.04;
 
       final stampWidget = Directionality(
-        textDirection: TextDirection.ltr,
+        textDirection: ui.TextDirection.ltr,
         child: SizedBox(
           width: imgWidth,
           height: imgHeight,
@@ -2202,7 +2308,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                       ),
                       SizedBox(height: bannerHeight * 0.08),
                       Text(
-                        "Lat: $lat | Long: $lon",
+                        utmString,
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: dynamicFontSize,
