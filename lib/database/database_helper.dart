@@ -102,7 +102,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 15, // 🚀 BUMP A VERSIÓN 15 (AGREGAR ENDPOINT OBSERVACIONES)
+      version: 16, // 🚀 BUMP A VERSIÓN 16 (AGREGAR FIRMA OPERADOR)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -244,6 +244,16 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE v15] Error agregando endpoint: $e');
       }
     }
+
+    if (oldVersion < 16) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando columna firma_path a monitoreos (Phase 146)...');
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN firma_path TEXT;");
+        await _log('✅ [UPGRADE v16] Columna firma_path agregada exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v16] Error agregando firma_path: $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -379,7 +389,8 @@ class DatabaseHelper {
         fecha_hora_caudal TEXT,
         foto_caudal TEXT,
         foto_nivel_freatico TEXT,
-        foto_muestreo TEXT
+        foto_muestreo TEXT,
+        firma_path TEXT
       )
     ''');
     

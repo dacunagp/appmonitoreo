@@ -197,77 +197,86 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
         for (var p in allParams) p.claveInterna: p.unidad
       };
 
-      // --- LOGICA SECUENCIAL ---
+      // --- LOGICA SECUENCIAL CON MULTIPART (PHASE 147) ---
       for (var record in _recordsPending) {
         if (_selectedIds.contains(record['id'])) {
           try {
             final Stopwatch recordTimer = Stopwatch()..start();
-            debugPrint('⏱️ [TIEMPOS] 🚀 Iniciando envío ${enviosCompletados + 1} de $totalEnvios (ID: ${record['id']})...');
+            debugPrint('⏱️ [SYNC] 🚀 Iniciando envío ${enviosCompletados + 1} de $totalEnvios (ID: ${record['id']})...');
 
+            // A. Preparar Detalles Legacy
             final List<Map<String, dynamic>> rawDetails = await _dbHelper.getHistorialMedicionesByMonitoreoId(record['id']);
             final List<Map<String, String>> formattedDetails = rawDetails.map((d) => {
               "parametro": d['parametro']?.toString() ?? '',
               "valor": d['valor']?.toString() ?? '0.0',
             }).toList();
 
+            // B. Obtener Payload JSON (Sin imágenes en base64)
             final monitoreo = Monitoreo.fromMap(record);
-            final item = await monitoreo.toJsonForSync(
-              compressPhoto: _compressAndEncodeImage,
+            final Map<String, dynamic> monitoreoMap = await monitoreo.toJsonForSync(
+              compressPhoto: (_) async => null, // No queremos base64 aquí
               legacyDetalles: formattedDetails,
-              unitsMap: unitsMap, // 🗺️ PASS UNITS HERE
+              unitsMap: unitsMap,
             );
 
-            final payload = {"monitoreos": [item]};
-            final jsonBody = jsonEncode(payload);
+            // C. Crear MultipartRequest
+            final request = http.MultipartRequest('POST', syncUrl);
+            request.headers.addAll(headers);
 
-            // 🩻 [DEEP DEBUG] Verify architecture BEFORE sending (trimmed for logs)
-            final debugItem = Map<String, dynamic>.from(item)
-              ..['foto_path'] = item['foto_path'] != null ? '[BASE64_IMAGE]' : null
-              ..['foto_multiparametro'] = item['foto_multiparametro'] != null ? '[BASE64_IMAGE]' : null
-              ..['foto_turbiedad'] = item['foto_turbiedad'] != null ? '[BASE64_IMAGE]' : null
-              ..['foto_caudal'] = item['foto_caudal'] != null ? '[BASE64_IMAGE]' : null
-              ..['foto_nivel_freatico'] = item['foto_nivel_freatico'] != null ? '[BASE64_IMAGE]' : null
-              ..['foto_muestreo'] = item['foto_muestreo'] != null ? '[BASE64_IMAGE]' : null;
-            
-            debugPrint('🩻 [PHASE 115] Payload structure for ID ${record['id']}: ${jsonEncode({"monitoreos": [debugItem]})}');
-            debugPrint('🩻 [DEEP DEBUG] Sending full payload (ID: ${record['id']})...');
+            // D. Asignar Campo 'payload' (Requerido por FastAPI - Envuelto en lista 'monitoreos')
+            request.fields['payload'] = jsonEncode({"monitoreos": [monitoreoMap]});
+            debugPrint('📦 [SYNC] Payload JSON asignado (envuelto en monitoreos).');
 
+            // E. Adjuntar Archivos (Si existen)
+            final Map<String, String?> filesToAttach = {
+              'foto_path': record['foto_path'],
+              'foto_multiparametro': record['foto_multiparametro'],
+              'foto_turbiedad': record['foto_turbiedad'],
+              'foto_caudal': record['foto_caudal'],
+              'foto_nivel_freatico': record['foto_nivel_freatico'],
+              'foto_muestreo': record['foto_muestreo'],
+              'firma_operador': record['firma_path'], // Campo específico para la firma
+            };
+
+            for (var entry in filesToAttach.entries) {
+              if (entry.value != null && entry.value!.isNotEmpty) {
+                final file = File(entry.value!);
+                if (await file.exists()) {
+                  request.files.add(await http.MultipartFile.fromPath(entry.key, file.path));
+                  debugPrint('📎 [SYNC] Archivo adjunto: ${entry.key}');
+                }
+              }
+            }
+
+            // F. Enviar Petición
             cronometroRed.start();
-            final response = await http.post(
-              syncUrl,
-              headers: headers,
-              body: jsonBody,
-            ).timeout(const Duration(seconds: 30));
+            final streamedResponse = await request.send().timeout(const Duration(seconds: 45));
+            final response = await http.Response.fromStream(streamedResponse);
             cronometroRed.stop();
 
-            debugPrint('🩻 [DEEP DEBUG] Status Code recibido: ${response.statusCode}');
-            debugPrint('🩻 [DEEP DEBUG] Body recibido del servidor:');
-            debugPrint(response.body); // El HTML o JSON con el stack trace del error 500
+            debugPrint('📡 [SYNC] Status Code: ${response.statusCode}');
 
             if (response.statusCode == 200 || response.statusCode == 201) {
               final responseData = jsonDecode(response.body);
-
               if (responseData['status'] == 'success') {
                 await _dbHelper.updateRegistroMonitoreo(record['id'], {'is_draft': 2});
                 enviosExitosos++;
-                if (dialogSetState != null) dialogSetState!(() {});
-                debugPrint('⏱️ [TIEMPOS] ✅ Éxito: ${responseData['mensaje']} (${recordTimer.elapsedMilliseconds} ms)');
+                debugPrint('✅ [SYNC] Éxito ID ${record['id']} (${recordTimer.elapsedMilliseconds} ms)');
               } else {
-                debugPrint('⏱️ [TIEMPOS] ⚠️ Rechazado: ${responseData['mensaje']} (${recordTimer.elapsedMilliseconds} ms)');
-                throw Exception('Rechazado por API: ${responseData['mensaje'] ?? 'Error desconocido'}');
+                throw Exception('API: ${responseData['mensaje'] ?? 'Error desconocido'}');
               }
+            } else if (response.statusCode == 422) {
+              debugPrint('❌ [SYNC] ERROR 422: ${response.body}');
+              throw Exception('Error de validación (422). Revisa el formato del payload.');
             } else {
-              String errorSnippet = response.body.length > 150 ? '${response.body.substring(0, 150)}...' : response.body;
-              throw Exception('Error del servidor (${response.statusCode}): $errorSnippet');
+              throw Exception('Servidor (${response.statusCode}): ${response.body}');
             }
           } catch (e) {
-            debugPrint('❌ [ENVIAR] Registro ${record['id']} falló: $e');
-            syncErrors.add('ID ${record['id']}: ${e.toString().replaceAll('Exception: ', '')}');
+            debugPrint('❌ [SYNC] Falló ID ${record['id']}: $e');
+            syncErrors.add('ID ${record['id']}: $e');
           } finally {
             enviosCompletados++;
-            if (dialogSetState != null) {
-              dialogSetState!(() {});
-            }
+            if (dialogSetState != null) dialogSetState!(() {});
           }
         }
       }

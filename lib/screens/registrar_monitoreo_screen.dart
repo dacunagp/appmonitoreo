@@ -19,6 +19,7 @@ import 'dart:async';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:utm/utm.dart';
 import 'package:intl/intl.dart';
+import 'package:signature/signature.dart';
 import 'chart_analysis_screen.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
@@ -83,6 +84,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   final ScreenshotController _screenshotController = ScreenshotController();
   double? _estacionLatitud;
   double? _estacionLongitud;
+  String? _firmaPath;
+
+  final SignatureController _signatureController = SignatureController(
+    penStrokeWidth: 3,
+    penColor: Colors.black,
+    exportBackgroundColor: Colors.white,
+  );
 
   // Listas para dropdowns
   List<Program> _programas = [];
@@ -254,6 +262,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'foto_caudal': _fotoCaudalPath,
         'foto_nivel_freatico': _fotoNivelFreaticoPath,
         'foto_muestreo': _fotoMuestreoPath,
+        'firma_path': _firmaPath,
         'is_draft': isDraft ? 1 : 0,
       };
 
@@ -325,7 +334,21 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     for (var controller in _paramControllers.values) {
       controller.dispose();
     }
+    _signatureController.dispose();
     super.dispose();
+  }
+
+  Future<String?> _saveSignature() async {
+    if (_signatureController.isEmpty) return null;
+    
+    final Uint8List? data = await _signatureController.toPngBytes();
+    if (data == null) return null;
+
+    final directory = await getApplicationDocumentsDirectory();
+    final String path = '${directory.path}/firma_${DateTime.now().millisecondsSinceEpoch}.png';
+    final File file = File(path);
+    await file.writeAsBytes(data);
+    return path;
   }
 
   Future<void> _loadDropdownData() async {
@@ -674,6 +697,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       // Dynamic Lists (Phase 114)
       _selectedAdicionalesInstancias = adicionalesToLoad;
       _selectedMultiInstancias = multiToLoad;
+      _firmaPath = data['firma_path'];
     });
 
     // Special case: Fetch stations and ranges AFTER state is set for basic lookups
@@ -907,6 +931,11 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     // 2. Proceed with Final Save
     setState(() => _isSaving = true);
     try {
+      // Phase 146: Save Signature before final submission
+      if (!widget.isReadOnly && _signatureController.isNotEmpty) {
+        _firmaPath = await _saveSignature();
+      }
+
       await _guardarInterno(isDraft: false);
 
       if (mounted) {
@@ -1754,6 +1783,63 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
           ),
           const SizedBox(height: 16),
         ],
+          
+          // --- FIRMA DEL OPERADOR (Phase 146) ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Firma del Operador',
+                  style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                if (widget.isReadOnly && _firmaPath != null)
+                  Container(
+                    height: 150,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade400),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.white,
+                    ),
+                    child: Image.file(File(_firmaPath!)),
+                  )
+                else if (!widget.isReadOnly)
+                  Column(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.blueAccent.withAlpha(100)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Signature(
+                            controller: _signatureController,
+                            height: 150,
+                            backgroundColor: isDarkMode ? Colors.white : Colors.grey.shade100,
+                          ),
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () => _signatureController.clear(),
+                            icon: const Icon(Icons.clear, color: Colors.redAccent, size: 18),
+                            label: const Text('LIMPIAR', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                if (widget.isReadOnly && _firmaPath == null)
+                  const Text('Sin firma registrada', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+              ],
+            ),
+          ),
 
           // --- 5. BOTÓN DE GUARDAR ---
           if (!widget.isReadOnly)

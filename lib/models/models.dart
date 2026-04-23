@@ -333,6 +333,7 @@ class Monitoreo {
   final String? fotoCaudal;
   final String? fotoNivelFreatico;
   final String? fotoMuestreo;
+  final String? firmaPath;
   final int isDraft;
   final String? syncStatus;
   final String? detallesJson;
@@ -378,6 +379,7 @@ class Monitoreo {
     this.syncStatus = 'pending',
     this.detallesJson,
     this.multiparametrosJson,
+    this.firmaPath,
   });
 
   factory Monitoreo.fromMap(Map<String, dynamic> map) {
@@ -421,6 +423,7 @@ class Monitoreo {
       syncStatus: map['sync_status'],
       detallesJson: map['detalles_json'],
       multiparametrosJson: map['multiparametros_json'],
+      firmaPath: map['firma_path'],
     );
   }
 
@@ -465,6 +468,7 @@ class Monitoreo {
       'sync_status': syncStatus,
       'detalles_json': detallesJson,
       'multiparametros_json': multiparametrosJson,
+      'firma_path': firmaPath,
     };
   }
 
@@ -508,17 +512,10 @@ class Monitoreo {
       "fecha_hora_caudal": fechaHoraCaudal?.replaceAll('T', ' ').split('.').first,
       "latitud": latitud,
       "longitud": longitud,
-      // 🚀 DUAL-JSON ARCHITECTURE (PHASE 115)
       "multiparametros_json": _transformToExplicitFormat(multiparametrosJson, units),
       "detalles_json": _transformToExplicitFormat(detallesJson, units),
       "detalles": legacyDetalles ?? [], // Legacy support
-      // 🖼️ HEAVY PAYLOAD (SEND AT THE END)
-      "foto_path": await compressPhoto(fotoPath),
-      "foto_multiparametro": await compressPhoto(fotoMultiparametro),
-      "foto_turbiedad": await compressPhoto(fotoTurbiedad),
-      "foto_caudal": await compressPhoto(fotoCaudal),
-      "foto_nivel_freatico": await compressPhoto(fotoNivelFreatico),
-      "foto_muestreo": await compressPhoto(fotoMuestreo),
+      // 🖼️ Note: Images are now sent via MultipartFile in the sync screen
     };
   }
 
