@@ -102,7 +102,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 16, // 🚀 BUMP A VERSIÓN 16 (AGREGAR FIRMA OPERADOR)
+      version: 17, // 🚀 BUMP A VERSIÓN 17 (ACTUALIZAR SERVIDORES API)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -254,6 +254,51 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE v16] Error agregando firma_path: $e');
       }
     }
+
+    if (oldVersion < 17) {
+      try {
+        await _log('🚀 [UPGRADE v17] Actualizando servidores API: eliminando obsoletos e insertando nuevo servidor AWS...');
+
+        // 1. Eliminar servidores obsoletos
+        await db.delete('url_acces', where: "url = ?", whereArgs: ['http://10.0.0.75/api_collector/public/api/']);
+        await db.delete('url_acces', where: "url = ?", whereArgs: ['https://gpconsultores.cl/apicollector/sync.php?endpoint=']);
+        await _log('✅ [UPGRADE v17] Servidores obsoletos eliminados.');
+
+        // 2. Asegurarse de que el servidor apicollector.gpconsultores.cl esté presente e inactivo
+        final existing = await db.query('url_acces', where: "url = ?", whereArgs: ['https://apicollector.gpconsultores.cl/api/']);
+        if (existing.isEmpty) {
+          await db.insert('url_acces', {
+            'url': 'https://apicollector.gpconsultores.cl/api/',
+            'usuario': 'collector',
+            'contrasenia': 'gp2026',
+            'is_active': 0,
+          });
+          await _log('✅ [UPGRADE v17] Servidor apicollector.gpconsultores.cl insertado.');
+        } else {
+          await db.update('url_acces', {'is_active': 0}, where: "url = ?", whereArgs: ['https://apicollector.gpconsultores.cl/api/']);
+        }
+
+        // 3. Insertar nuevo servidor AWS dev si no existe y marcarlo como activo
+        final awsExisting = await db.query('url_acces', where: "url = ?", whereArgs: ['http://3.234.4.126:5348/api/']);
+        if (awsExisting.isEmpty) {
+          await db.insert('url_acces', {
+            'url': 'http://3.234.4.126:5348/api/',
+            'usuario': 'collector',
+            'contrasenia': 'gp2026',
+            'is_active': 0,
+          });
+          await _log('✅ [UPGRADE v17] Nuevo servidor AWS dev insertado.');
+        }
+
+        // 4. Desactivar todos y activar sólo el nuevo servidor AWS
+        await db.update('url_acces', {'is_active': 0});
+        await db.update('url_acces', {'is_active': 1}, where: "url = ?", whereArgs: ['http://3.234.4.126:5348/api/']);
+        await _log('✅ [UPGRADE v17] Servidor AWS dev establecido como activo (seleccionado).');
+
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v17] Error actualizando servidores API: $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -269,26 +314,19 @@ class DatabaseHelper {
           is_active INTEGER DEFAULT 0
         )
       ''');
-      // Insertar API Local (Activa)
-      await db.insert('url_acces', {
-        'url': 'http://10.0.0.75/api_collector/public/api/',
-        'usuario': 'collector',
-        'contrasenia': 'gp2026',
-        'is_active': 1 
-      });
-      // Insertar API Productiva 1 (Inactiva)
+      // Insertar servidor de producción (Inactivo)
       await db.insert('url_acces', {
         'url': 'https://apicollector.gpconsultores.cl/api/',
         'usuario': 'collector',
         'contrasenia': 'gp2026',
-        'is_active': 0 
+        'is_active': 0
       });
-      // Insertar API Productiva 2 (Inactiva)
+      // Insertar servidor AWS dev (Activo / Seleccionado por defecto)
       await db.insert('url_acces', {
-        'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
+        'url': 'http://3.234.4.126:5348/api/',
         'usuario': 'collector',
         'contrasenia': 'gp2026',
-        'is_active': 0 
+        'is_active': 1
       });
     }
 
@@ -452,24 +490,18 @@ class DatabaseHelper {
       )
     ''');
 
-    // Insertar el trío de APIs de fábrica
-    await db.insert('url_acces', {
-      'url': 'http://10.0.0.75/api_collector/public/api/',
-      'usuario': 'collector',
-      'contrasenia': 'gp2026',
-      'is_active': 1 
-    });
+    // Insertar par de APIs de fábrica
     await db.insert('url_acces', {
       'url': 'https://apicollector.gpconsultores.cl/api/',
       'usuario': 'collector',
       'contrasenia': 'gp2026',
-      'is_active': 0 
+      'is_active': 0
     });
     await db.insert('url_acces', {
-      'url': 'https://gpconsultores.cl/apicollector/sync.php?endpoint=',
+      'url': 'http://3.234.4.126:5348/api/',
       'usuario': 'collector',
       'contrasenia': 'gp2026',
-      'is_active': 0 
+      'is_active': 1  // ✅ Servidor de desarrollo AWS — seleccionado por defecto
     });
 
     await db.execute('''
