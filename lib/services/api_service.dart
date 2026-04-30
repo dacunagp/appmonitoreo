@@ -245,8 +245,8 @@ class ApiService {
           'Content-Type': 'application/json',
         },
         body: json.encode({
-          'programa': programa,
-          'id_campana': programa, // FastAPI resilience
+          'programa': programa.toString(),
+          'id_campana': programa.toString(),
           'estaciones': estaciones,
         }),
       );

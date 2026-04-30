@@ -125,6 +125,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   
   // DYNAMIC PARAMETERS (Phase 103/111/114 Manual Builder)
   List<Parametro> _availableExtraParams = []; // Catalog for manual addition
+  List<Parametro> _allParams = [];            // Catalog for lookup
   List<ParametroInstancia> _selectedAdicionalesInstancias = []; // Phase 114
   List<ParametroInstancia> _selectedMultiInstancias = [];      // Phase 114
   Parametro? _parametroAdicionalSeleccionado;
@@ -265,6 +266,35 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'firma_path': _firmaPath,
         'is_draft': isDraft ? 1 : 0,
       };
+
+      // Phase 169: Data Sanitization for Failed Monitoring
+      if (_isMonitoreoFallido) {
+        header['ph'] = null;
+        header['temperatura'] = null;
+        header['conductividad'] = null;
+        header['oxigeno'] = null;
+        header['turbiedad'] = null;
+        header['nivel'] = null;
+        header['profundidad'] = null;
+        header['nivel_caudal'] = null;
+        header['equipo_multi_id'] = null;
+        header['turbidimetro_id'] = null;
+        header['equipo_nivel_id'] = null;
+        header['equipo_caudal'] = null;
+        header['cod_laboratorio'] = null;
+        header['hidroquimico'] = 0;
+        header['isotopico'] = 0;
+        header['foto_path'] = null;
+        header['foto_multiparametro'] = null;
+        header['foto_turbiedad'] = null;
+        header['foto_caudal'] = null;
+        header['foto_nivel_freatico'] = null;
+        header['foto_muestreo'] = null;
+        // We will overwrite the JSON strings later in the code if needed, 
+        // but let's clear the source lists here just in case.
+        _selectedMultiInstancias.clear();
+        _selectedAdicionalesInstancias.clear();
+      }
 
       // CRITICAL FIX: Remove 'id' if null so SQLite auto-increments properly
       if (header['id'] == null) {
@@ -426,6 +456,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _activeParameterKeys = activeKeys;
         _categorizedParams = categorized;
         _availableExtraParams = availableExtras;
+        _allParams = allParams;
 
         // --- Phase 114: Auto-Populate Base Multiparameters ---
         if (widget.registroId == null && _selectedMultiInstancias.isEmpty) {
@@ -928,6 +959,114 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       return;
     }
 
+    // Validar campos faltantes y advertir
+    List<String> faltantes = [];
+    if (!_isMonitoreoFallido) {
+      if (_activeParameterKeys.contains('profundidad') && 
+          _matrizSeleccionada?.nombreMatriz != 'Aguas Superficiales') {
+        if ((_paramControllers['profundidad']?.text ?? '').isEmpty) {
+          faltantes.add('Profundidad de muestreo');
+        }
+      }
+
+      // Multiparámetro
+      if (_equipoMultiparametroSeleccionado == null) faltantes.add('Equipo Multiparámetro');
+      for (var inst in _selectedMultiInstancias) {
+        if (inst.controller.text.isEmpty) {
+          faltantes.add('Valor de ${inst.parametro.nombreParametro}');
+        }
+      }
+      
+      // Turbiedad
+      if (_turbidimetroSeleccionado == null) faltantes.add('Equipo Turbidímetro');
+      if ((_paramControllers['turbiedad']?.text ?? '').isEmpty) faltantes.add('Valor de Turbiedad');
+      
+      // Nivel Freático
+      if (_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false) {
+        if (_equipoNivelSeleccionado == null) faltantes.add('Equipo Nivel Freático');
+        if (_tipoNivelPozoSeleccionado == null) faltantes.add('Tipo / Nivel Pozo');
+        if ((_paramControllers['nivel']?.text ?? '').isEmpty) faltantes.add('Nivel Freático');
+        if (_fechaYHoraNivel == null) faltantes.add('Hora Medición - Nivel');
+      }
+
+      // Caudal
+      if (_matrizSeleccionada?.nombreMatriz == 'Aguas Superficiales') {
+        if (_selectedEquipoCaudalId == null) faltantes.add('Equipo Caudal (Molinete)');
+        if (_caudalController.text.isEmpty) faltantes.add('Nivel Caudal');
+        if (_fechaHoraCaudal == null) faltantes.add('Fecha/Hora - Caudal');
+      }
+
+      // Muestreo
+      if (_metodoSeleccionado == null) faltantes.add('Método de Muestreo');
+      if (_muestreoHidroquimico == null) faltantes.add('Muestreo Hidroquímico');
+      if (_muestreoIsotopico == null) faltantes.add('Muestreo Isotópico');
+      if (_codLabController.text.trim().isEmpty) faltantes.add('Código Laboratorio');
+      
+      // Parámetros Adicionales
+      for (var inst in _selectedAdicionalesInstancias) {
+        if (inst.controller.text.isEmpty) {
+          faltantes.add('Valor de ${inst.parametro.nombreParametro}');
+        }
+      }
+    }
+
+    if (faltantes.isNotEmpty) {
+      final bool? confirmar = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('Campos Incompletos', style: TextStyle(fontSize: 18)),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Los siguientes campos no han sido llenados:'),
+                  const SizedBox(height: 10),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: faltantes.length,
+                      itemBuilder: (context, index) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                          child: Text('• ${faltantes[index]}', style: const TextStyle(fontSize: 13)),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('¿Desea guardar el registro de todos modos?', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+                child: const Text('Sí, guardar', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmar != true) {
+        return; // El usuario canceló el guardado
+      }
+    }
+
     // 2. Proceed with Final Save
     setState(() => _isSaving = true);
     try {
@@ -1266,26 +1405,19 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 // Equipo Caudal (Molinete)
                 IgnorePointer(
                   ignoring: widget.isReadOnly,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedEquipoCaudalId,
-                      decoration: InputDecoration(
-                        labelText: 'Equipo Caudal (Molinete)',
-                        labelStyle: const TextStyle(color: Colors.blueAccent, fontSize: 13),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: _equiposCaudal.map((e) => DropdownMenuItem<int>(
-                        value: e.id,
-                        child: Text(e.codigo, style: const TextStyle(fontSize: 14)),
-                      )).toList(),
-                      onChanged: widget.isReadOnly ? null : (val) {
-                        setState(() => _selectedEquipoCaudalId = val);
-                        _saveAsDraft();
-                      },
-                      hint: const Text('Seleccione equipo Molinete'),
-                    ),
+                  child: SearchableDropdown(
+                    label: 'Equipo Caudal (Molinete)',
+                    hintText: 'Seleccione equipo Molinete',
+                    searchHintText: 'Buscar equipo...',
+                    selectedValue: _equiposCaudal.where((e) => e.id == _selectedEquipoCaudalId).firstOrNull?.codigo,
+                    options: _equiposCaudal.map((e) => e.codigo).toList(),
+                    isDarkMode: isDarkMode,
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedEquipoCaudalId = _equiposCaudal.firstWhere((e) => e.codigo == val).id;
+                      });
+                      _saveAsDraft();
+                    },
                   ),
                 ),
                 // Nivel Caudal [L/s]
@@ -1406,7 +1538,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 selectedValue: _equipoMultiparametroSeleccionado,
                 options: _equiposMultiOptions,
                 isDarkMode: isDarkMode,
-                onChanged: (val) => setState(() => _equipoMultiparametroSeleccionado = val),
+                onChanged: _onEquipoMultiChanged,
               )),
               if (_equipoMultiparametroSeleccionado != null) ...[
                 // Phase 114: Rendering Dynamic Multiparametro Instances
@@ -1416,6 +1548,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                     children: [
                       Expanded(
                         child: CustomParametroInputRow(
+                          key: ValueKey('multi_${inst.uniqueId}'),
                           isReadOnly: widget.isReadOnly,
                           label: '${inst.parametro.nombreParametro} [${inst.parametro.unidad}]',
                           hintText: 'Ingrese valor',
@@ -1516,6 +1649,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   children: [
                     Expanded(
                       child: CustomParametroInputRow(
+                        key: ValueKey('add_${inst.uniqueId}'),
                         isReadOnly: widget.isReadOnly,
                         label: '${inst.parametro.nombreParametro} [${inst.parametro.unidad}]',
                         hintText: 'Ingrese valor',
@@ -1946,7 +2080,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
 
           
-          if (_activeParameterKeys.contains('profundidad'))
+          if (_activeParameterKeys.contains('profundidad') && 
+              _matrizSeleccionada?.nombreMatriz != 'Aguas Superficiales' && 
+              !_isMonitoreoFallido)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: CustomParametroInputRow(
@@ -2807,6 +2943,39 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   // --- DYNAMIC PARAMETER LOGIC (Phase 75/94/111/114) ---
+  void _onEquipoMultiChanged(String? val) {
+    setState(() {
+      _equipoMultiparametroSeleccionado = val;
+      
+      // Phase 164: Auto-populate pH, Temp, Cond on selection
+      if (val != null) {
+        final baseKeys = ['ph', 'temperatura', 'conductividad'];
+        for (var key in baseKeys) {
+          // 1. Check if already present in selected list
+          bool exists = _selectedMultiInstancias.any((inst) => inst.parametro.claveInterna == key);
+          
+          if (!exists) {
+            // 2. Find parameter in catalog
+            try {
+              final p = _allParams.firstWhere((param) => param.claveInterna == key);
+              final controller = TextEditingController();
+              controller.addListener(_onFieldChanged);
+              
+              _selectedMultiInstancias.add(ParametroInstancia(
+                parametro: p, 
+                controller: controller, 
+                uniqueId: '${key}_auto_${DateTime.now().microsecondsSinceEpoch}'
+              ));
+            } catch (e) {
+              debugPrint('⚠️ [Auto-Populate] No se pudo encontrar el parámetro $key: $e');
+            }
+          }
+        }
+      }
+    });
+    _onFieldChanged();
+  }
+
   void _removeInstancia(ParametroInstancia inst) {
     setState(() {
       _selectedAdicionalesInstancias.removeWhere((i) => i.uniqueId == inst.uniqueId);

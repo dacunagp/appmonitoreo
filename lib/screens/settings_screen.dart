@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/app_drawer.dart';
+import '../services/sync_service.dart';
 import '../utils/security_utils.dart';
 import '../database/database_helper.dart';
 
@@ -39,6 +40,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _autoSyncEnabled = value;
     });
+    
+    if (value) {
+      // Trigger sync immediately if enabled
+      SyncService().performAutoSync();
+    }
   }
 
   Future<void> _exportarBaseDeDatos() async {

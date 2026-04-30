@@ -6,8 +6,8 @@ class SecurityUtils {
     final TextEditingController pinController = TextEditingController();
     final dbHelper = DatabaseHelper();
     
-    // Get PIN from SQLite (same as API config), fallback to '4567'
-    final String correctPin = await dbHelper.getPin() ?? '4567';
+    // Get PIN from SQLite (same as API config), fallback to '1234'
+    final String correctPin = await dbHelper.getPin() ?? '1234';
 
     final bool? result = await showDialog<bool>(
       context: context,

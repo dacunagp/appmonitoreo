@@ -349,7 +349,7 @@ class DatabaseHelper {
     if (res.isEmpty) {
       await _log('🏗️ [MIGRATION] Creando tabla security para base de datos existente...');
       await db.execute('CREATE TABLE security (id INTEGER PRIMARY KEY AUTOINCREMENT, pin TEXT NOT NULL)');
-      await db.insert('security', {'pin': '4567'});
+      await db.insert('security', {'pin': '1234'});
     }
 
     res = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='observaciones_predefinidas'");
@@ -447,7 +447,7 @@ class DatabaseHelper {
     await db.execute('CREATE TABLE tipos_equipo (id_form INTEGER PRIMARY KEY, tipo TEXT)');
     await db.execute('CREATE TABLE security (id INTEGER PRIMARY KEY AUTOINCREMENT, pin TEXT NOT NULL)');
 
-    await db.insert('security', {'pin': '4567'});
+    await db.insert('security', {'pin': '1234'});
 
     // 3. ENGLISH SCHEMA & MANY-TO-MANY RELATIONSHIPS
     await db.execute('CREATE TABLE programs (id INTEGER PRIMARY KEY, name TEXT)');

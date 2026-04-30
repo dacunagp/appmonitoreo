@@ -144,6 +144,10 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
         estacionesList = _selectedStations.map((s) => s.name).toList();
       }
 
+      debugPrint('▶️ [MUESTRAS] Iniciando _onGetDataPressed para programa: ${_selectedProgram?.id}');
+      debugPrint('▶️ [MUESTRAS] Total de estaciones a procesar: ${estacionesList.length}');
+      debugPrint('▶️ [MUESTRAS] Lista de estaciones: $estacionesList');
+
       int totalSincronizados = 0;
 
       // 2. Loop through stations for real-time progress
@@ -155,10 +159,12 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
         });
 
         // Fetch data for this specific station
+        debugPrint('🌐 [MUESTRAS] Pidiendo datos históricos para estación: $stationName (Programa: ${_selectedProgram!.id})');
         final dynamic decodedJson = await _apiService.fetchHistorialMuestras(
           _selectedProgram!.id.toString(),
           [stationName],
         );
+        debugPrint('📥 [MUESTRAS] Respuesta decodificada para $stationName recibida. Tipo: ${decodedJson.runtimeType}');
 
         // Robust Parsing (existing logic adapted for single station results)
         List<dynamic> apiRecords = [];
@@ -173,8 +179,10 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
             apiRecords = [decodedJson];
           }
         }
+        debugPrint('🔍 [MUESTRAS] Se detectaron ${apiRecords.length} registros crudos en la API.');
 
         final List<Map<String, dynamic>> parsedData = _apiService.transformToLongFormat(apiRecords);
+        debugPrint('📊 [MUESTRAS] transformToLongFormat devolvió ${parsedData.length} registros (formato largo).');
         
         // Save incrementally passing the true API records length for accurate logging
         await _dbHelper.syncHistoricalData(
@@ -182,6 +190,7 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
           exactSampleCount: apiRecords.length,
         );
         totalSincronizados += apiRecords.length;
+        debugPrint('💾 [MUESTRAS] Guardados en SQLite. Total sincronizados hasta ahora: $totalSincronizados');
 
         // Small delay to allow the user to read the message if the API is fast
         await Future.delayed(const Duration(milliseconds: 300));
@@ -196,7 +205,9 @@ class _ConectorWebScreenState extends State<ConectorWebScreen> {
           SnackBar(content: Text('Se sincronizaron $totalSincronizados muestras históricas')),
         );
       }
+      debugPrint('✅ [MUESTRAS] Sincronización completada. Total: $totalSincronizados');
     } catch (e) {
+      debugPrint('❌ [MUESTRAS] Error durante la sincronización: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al obtener datos: $e')),

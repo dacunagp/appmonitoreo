@@ -7,6 +7,7 @@ import '../models/models.dart';
 import 'package:flutter_map_cache/flutter_map_cache.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio_cache_interceptor_file_store/dio_cache_interceptor_file_store.dart';
+import 'package:utm/utm.dart';
 import 'registrar_monitoreo_screen.dart'; // Phase 121
 import 'monitoreos_screen.dart'; // Phase 124
 
@@ -187,7 +188,11 @@ class _CampanasScreenState extends State<CampanasScreen> {
                 ],
               ),
               const Divider(height: 32),
-              _buildDetailRow(Icons.map, 'Coordenadas', '${station.latitude.toStringAsFixed(2)}, ${station.longitude.toStringAsFixed(2)}'),
+              Builder(builder: (context) {
+                final utmCoords = UTM.fromLatLon(lat: station.latitude, lon: station.longitude);
+                final utmString = 'E: ${utmCoords.easting.toStringAsFixed(1)}  N: ${utmCoords.northing.toStringAsFixed(1)} (Zona ${utmCoords.zone})';
+                return _buildDetailRow(Icons.map, 'Coordenadas UTM', utmString);
+              }),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -451,7 +456,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
               left: 0,
               right: 0,
               child: Container(
-                color: isDarkMode ? theme.colorScheme.surface.withOpacity(0.9) : Colors.black.withOpacity(0.85),
+                color: isDarkMode ? const Color(0xFF222222) : Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
@@ -460,16 +465,16 @@ class _CampanasScreenState extends State<CampanasScreen> {
                         child: DropdownButton<int>(
                           isExpanded: true,
                           value: _selectedProgramId,
-                          hint: const Text('Programa', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                          dropdownColor: Colors.grey[900],
-                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          hint: Text('Programa', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54, fontSize: 13)),
+                          dropdownColor: isDarkMode ? Colors.grey[900] : Colors.white,
+                          icon: Icon(Icons.arrow_drop_down, color: isDarkMode ? Colors.white : Colors.black87),
+                          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87, fontSize: 13),
                           items: [
-                            const DropdownMenuItem<int>(
+                            DropdownMenuItem<int>(
                               value: null,
                               child: Text(
                                 'Todos los Programas',
-                                style: TextStyle(color: Colors.white),
+                                style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -477,7 +482,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                                   value: p.id,
                                   child: Text(
                                     p.name,
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 )),
@@ -489,7 +494,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                     Container(
                       height: 24,
                       width: 1,
-                      color: Colors.white30,
+                      color: isDarkMode ? Colors.white30 : Colors.grey[300],
                       margin: const EdgeInsets.symmetric(horizontal: 12),
                     ),
                     Expanded(
@@ -497,10 +502,10 @@ class _CampanasScreenState extends State<CampanasScreen> {
                         child: DropdownButton<int>(
                           isExpanded: true,
                           value: _selectedStationId,
-                          hint: const Text('Seleccione', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                          dropdownColor: Colors.grey[900],
-                          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          hint: Text('Seleccione', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54, fontSize: 13)),
+                          dropdownColor: isDarkMode ? Colors.grey[900] : Colors.white,
+                          icon: Icon(Icons.arrow_drop_down, color: isDarkMode ? Colors.white : Colors.black87),
+                          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87, fontSize: 13),
                           items: _filteredStations.map((s) {
                                 final int status = _stationStatuses[s.id] ?? 0;
                                 final Color dotColor = _getStatusColor(status);
@@ -519,7 +524,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                                         child: Text(
                                           s.name, 
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(color: Colors.white),
+                                          style: TextStyle(color: isDarkMode ? Colors.white : Colors.black87),
                                         ),
                                       ),
                                     ],
@@ -536,7 +541,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
             ),
 
             if (_isLoading)
-              const Center(child: CircularProgressIndicator(color: Colors.white)),
+              Center(child: CircularProgressIndicator(color: isDarkMode ? Colors.white : theme.primaryColor)),
 
             Positioned(
               bottom: 120,
@@ -650,6 +655,7 @@ class _CampanasScreenState extends State<CampanasScreen> {
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final s = _filteredStations[index];
+                                final utm = UTM.fromLatLon(lat: s.latitude, lon: s.longitude);
                                 final status = _stationStatuses[s.id] ?? 0;
                                 final color = _getStatusColor(status);
                                 final label = _getStatusLabel(status);
@@ -690,9 +696,9 @@ class _CampanasScreenState extends State<CampanasScreen> {
                                               style: const TextStyle(fontWeight: FontWeight.bold),
                                             ),
                                             subtitle: Text(
-                                              'Lat: ${s.latitude}, Lon: ${s.longitude}',
-                                              style: const TextStyle(fontSize: 12),
-                                            ),
+                                            'E: ${utm.easting.toStringAsFixed(0)}, N: ${utm.northing.toStringAsFixed(0)}',
+                                            style: const TextStyle(fontSize: 12),
+                                          ),
                                             trailing: Column(
                                               mainAxisAlignment: MainAxisAlignment.center,
                                               crossAxisAlignment: CrossAxisAlignment.end,

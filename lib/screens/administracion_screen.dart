@@ -41,7 +41,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialIndex);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {
