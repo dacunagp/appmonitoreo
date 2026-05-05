@@ -29,6 +29,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<TipoEquipo> _tiposEquipo = [];
   List<Parametro> _parametros = [];
   List<Map<String, dynamic>> _observaciones = [];
+  List<CorreoEnviado> _historialCorreos = [];
   String _searchQuery = '';
   int? _selectedProgramaFilter;
 
@@ -41,7 +42,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialIndex);
+    _tabController = TabController(length: 7, vsync: this, initialIndex: widget.initialIndex);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {
@@ -93,6 +94,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
       final tiposEquipo = await _dbHelper.getTiposEquipo();
       final parametros = await _dbHelper.getParametros();
       final observaciones = await _dbHelper.getObservacionesPredefinidasCompleto();
+      final historialCorreos = await _dbHelper.getHistorialCorreos();
 
       setState(() {
         _usuarios = usuarios;
@@ -104,6 +106,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
         _tiposEquipo = tiposEquipo; 
         _parametros = parametros;
         _observaciones = observaciones;
+        _historialCorreos = historialCorreos;
         _isLoading = false;
       });
     } catch (e) {
@@ -506,6 +509,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
               Tab(text: 'Equipos'),
               Tab(text: 'Parámetros'),
               Tab(text: 'Observaciones'),
+              Tab(text: 'Historial Correos'),
             ],
           ),
         ),
@@ -521,12 +525,18 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   _buildEquiposTab(),
                   _buildTabList(_parametros, 'Parámetro'),
                   _buildTabList(_observaciones, 'Observación'),
+                  _buildHistorialCorreosTab(),
                 ],
               ),
         floatingActionButton: FloatingActionButton(
           onPressed: () {
-            final types = ['Método', 'Matriz', 'Programa', 'Equipo', 'Parámetro', 'Observación'];
-            _showFormDialog(type: types[_tabController.index]);
+            final types = ['Método', 'Matriz', 'Programa', 'Equipo', 'Parámetro', 'Observación', 'Correo'];
+            if (_tabController.index < 6) {
+              _showFormDialog(type: types[_tabController.index]);
+            } else {
+              // Redirect to send email screen
+              Navigator.pushNamed(context, '/enviar_correo');
+            }
           },
           child: const Icon(Icons.add),
         ),
@@ -827,5 +837,131 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
     normalized = normalized.replaceAll(RegExp(r'^_+|_+$'), '');
 
     return normalized;
+  }
+
+  Widget _buildHistorialCorreosTab() {
+    if (_historialCorreos.isEmpty) {
+      return const Center(child: Text('No hay historial de correos.'));
+    }
+
+    final filtered = _historialCorreos.where((item) {
+      if (_searchQuery.isEmpty) return true;
+      return item.destinatario.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+             item.asunto.toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: const InputDecoration(
+                    hintText: 'Buscar por destinatario o asunto...',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: (value) => setState(() => _searchQuery = value),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_sweep, color: Colors.redAccent),
+                tooltip: 'Limpiar todo el historial',
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Limpiar Historial'),
+                      content: const Text('¿Estás seguro de que deseas borrar TODO el historial de correos?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCELAR')),
+                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('LIMPIAR', style: TextStyle(color: Colors.red))),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    await _dbHelper.clearAllCorreoHistorial();
+                    _loadAllData();
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: filtered.length,
+            itemBuilder: (context, index) {
+              final item = filtered[index];
+              final dateStr = '${item.fechaEnvio.day}/${item.fechaEnvio.month} ${item.fechaEnvio.hour}:${item.fechaEnvio.minute.toString().padLeft(2, '0')}';
+              final bool isError = item.estado == 'Error';
+
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: isError ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1),
+                  child: Icon(
+                    isError ? Icons.error_outline : Icons.check_circle_outline,
+                    color: isError ? Colors.red : Colors.green,
+                  ),
+                ),
+                title: Text(item.destinatario, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('${item.asunto}\n$dateStr', style: const TextStyle(fontSize: 12)),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () async {
+                    if (item.id != null) {
+                      await _dbHelper.deleteCorreoHistorial(item.id!);
+                      _loadAllData();
+                    }
+                  },
+                ),
+                isThreeLine: true,
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Detalle del Envío'),
+                      content: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _detailRow('Para:', item.destinatario),
+                            _detailRow('Asunto:', item.asunto),
+                            _detailRow('Fecha:', '${item.fechaEnvio.day.toString().padLeft(2, '0')}/${item.fechaEnvio.month.toString().padLeft(2, '0')}/${item.fechaEnvio.year} ${item.fechaEnvio.hour.toString().padLeft(2, '0')}:${item.fechaEnvio.minute.toString().padLeft(2, '0')}'),
+                            _detailRow('Estado:', item.estado),
+                            if (isError) _detailRow('Error:', item.errorMensaje ?? 'Desconocido'),
+                            const Divider(),
+                            const Text('Contenido:', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 5),
+                            Text(item.cuerpo),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CERRAR')),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$label ', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
   }
 }

@@ -29,7 +29,10 @@ import 'screens/administracion_screen.dart';
 import 'screens/api_config_screen.dart';
 import 'screens/security_lock_screen.dart';
 import 'screens/notificaciones_screen.dart';
+import 'screens/trazabilidad_screen.dart';
+import 'screens/login_screen.dart';
 import 'services/sync_service.dart';
+import 'services/auth_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
@@ -139,19 +142,22 @@ void main() async {
 
   await dotenv.load(fileName: ".env");
 
+  final bool loggedIn = await AuthService().isLoggedIn();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => GraphProvider()),
       ],
-      child: const MonitoreoApp(),
+      child: MonitoreoApp(initialRoute: loggedIn ? '/monitoreos' : '/login'),
     ),
   );
 }
 
 class MonitoreoApp extends StatelessWidget {
-  const MonitoreoApp({super.key});
+  final String initialRoute;
+  const MonitoreoApp({super.key, required this.initialRoute});
 
   @override
   Widget build(BuildContext context) {
@@ -163,8 +169,9 @@ class MonitoreoApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeProvider.themeMode,
-      initialRoute: '/monitoreos',
+      initialRoute: initialRoute,
       routes: {
+        '/login': (context) => const LoginScreen(),
         '/monitoreos': (context) => const MonitoreosScreen(),
         '/registrar_monitoreo': (context) => const RegistrarMonitoreoScreen(),
         '/graficos': (context) => const GraficosScreen(),
@@ -180,6 +187,10 @@ class MonitoreoApp extends StatelessWidget {
         '/api_config': (context) => const ApiConfigScreen(),
         '/security_lock': (context) => const SecurityLockScreen(),
         '/notificaciones': (context) => const NotificacionesScreen(),
+        '/trazabilidad': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+          return TrazabilidadScreen(monitoreoId: args?['monitoreoId']);
+        },
       },
     );
   }

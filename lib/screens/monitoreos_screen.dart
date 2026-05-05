@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/enviar_correo_form.dart';
 import '../utils/security_utils.dart';
 import 'registrar_monitoreo_screen.dart';
 
@@ -17,7 +18,8 @@ class MonitoreosScreen extends StatefulWidget {
   State<MonitoreosScreen> createState() => _MonitoreosScreenState();
 }
 
-class _MonitoreosScreenState extends State<MonitoreosScreen> {
+class _MonitoreosScreenState extends State<MonitoreosScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final DatabaseHelper _dbHelper = DatabaseHelper();
   bool _isLoading = true;
   List<Map<String, dynamic>> _monitoreos = [];
@@ -29,6 +31,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     
     // Phase 124: Apply initial filter if provided
     if (widget.initialStationName != null) {
@@ -103,49 +106,79 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Monitoreos'),
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          tabs: const [
+            Tab(icon: Icon(Icons.list_alt), text: 'Registros'),
+            Tab(icon: Icon(Icons.email_outlined), text: 'Notificar'),
+          ],
+        ),
         actions: [
-          IconButton(
-            icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.filter_list),
-            tooltip: _sortAscending ? 'Más antiguo primero' : 'Más reciente primero',
-            onPressed: _toggleSort,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => _confirmarEliminarTodo(context),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              if (value == 'export_csv') {
-                _exportToCsvAndShare();
-              }
+          // Only show sort/delete actions on first tab
+          ListenableBuilder(
+            listenable: _tabController,
+            builder: (context, _) {
+              if (_tabController.index != 0) return const SizedBox.shrink();
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(_sortAscending ? Icons.arrow_upward : Icons.filter_list),
+                    tooltip: _sortAscending ? 'Más antiguo primero' : 'Más reciente primero',
+                    onPressed: _toggleSort,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _confirmarEliminarTodo(context),
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (value) {
+                      if (value == 'export_csv') _exportToCsvAndShare();
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem<String>(
+                        value: 'export_csv',
+                        child: ListTile(
+                          leading: Icon(Icons.share),
+                          title: Text('Compartir como CSV'),
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem<String>(
-                value: 'export_csv',
-                child: ListTile(
-                  leading: Icon(Icons.share),
-                  title: Text('Compartir como CSV'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                ),
-              ),
-            ],
           ),
         ],
       ),
       drawer: const AppDrawer(currentRoute: '/monitoreos'),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const RegistrarMonitoreoScreen()),
-          ).then((_) => _loadMonitoreos());
+      floatingActionButton: ListenableBuilder(
+        listenable: _tabController,
+        builder: (context, _) {
+          if (_tabController.index != 0) return const SizedBox.shrink();
+          return FloatingActionButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const RegistrarMonitoreoScreen()),
+              ).then((_) => _loadMonitoreos());
+            },
+            backgroundColor: Colors.blueAccent,
+            child: const Icon(Icons.add, color: Colors.white),
+          );
         },
-        backgroundColor: Colors.blueAccent,
-        child: const Icon(Icons.add, color: Colors.white),
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // --- TAB 1: Lista de Registros ---
+          Column(
         children: [
           // 1. Modern Pill Search Bar
           Padding(
@@ -366,7 +399,12 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> {
                       ),
           ),
         ],
-      ),
+          ), // end Column (Tab 1)
+          
+          // --- TAB 2: Enviar Notificación ---
+          const EnviarCorreoForm(),
+        ], // end TabBarView children
+      ), // end TabBarView
     );
   }
 

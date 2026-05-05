@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/models.dart';
+import '../services/auth_service.dart';
 
 class ApiService {
   final DatabaseHelper _dbHelper = DatabaseHelper();
@@ -14,18 +15,24 @@ class ApiService {
     final baseUrl = config['url'];
     final auth = '${config['usuario']}:${config['contrasenia']}';
     final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+    String? token = await AuthService().getToken();
+    
+    // 🛡️ [FIX] Si el token es local, no lo enviamos al servidor (usamos Basic Auth)
+    if (token != null && token.startsWith('local_session_')) {
+      token = null;
+    }
 
     try {
       final response = await http.get(
         Uri.parse('$baseUrl$endpoint'),
-        headers: {'Authorization': basicAuth},
+        headers: {
+          'Authorization': (token != null && token.isNotEmpty) ? 'Bearer $token' : basicAuth,
+        },
       );
 
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is List) {
-          // Si es una lista (FastAPI), la envolvemos en un mapa para no romper pantallas antiguas
-          // Se detecta el tipo según el endpoint para usar la llave correcta
           String key = endpoint.split('/').last;
           if (key == 'campanas') key = 'campanas';
           if (key == 'usuarios') key = 'usuarios';
@@ -47,6 +54,10 @@ class ApiService {
     final baseUrl = config['url'];
     final auth = '${config['usuario']}:${config['contrasenia']}';
     final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+    String? token = await AuthService().getToken();
+    if (token != null && token.startsWith('local_session_')) {
+      token = null;
+    }
 
     final endpointData = await _dbHelper.getEndpoints();
     final endpoints = endpointData
@@ -70,7 +81,9 @@ class ApiService {
 
         var response = await http.get(
           Uri.parse(fullUrl),
-          headers: {'Authorization': basicAuth},
+          headers: {
+            'Authorization': (token != null && token.isNotEmpty) ? 'Bearer $token' : basicAuth,
+          },
         ).timeout(const Duration(seconds: 30));
 
         // --- LÓGICA DE REINTENTO PARA OBSERVACIONES ---
@@ -120,6 +133,9 @@ class ApiService {
         // 2. Process Usuarios / Inspectores
         if (endpointName.contains('usuario')) {
           final listItems = _asList(decodedBody, 'usuarios');
+          if (listItems.isNotEmpty) {
+            debugPrint('📥 [DEBUG-SYNC] Primer usuario recibido: ${listItems.first}');
+          }
           final users = listItems.map<Usuario>((j) => Usuario.fromJson(j)).toList();
           await _dbHelper.saveUsersBatch(users);
         }
@@ -236,12 +252,17 @@ class ApiService {
         ? baseUrl.replaceAll('endpoint=', 'endpoint=$endpointName')
         : '$baseUrl$endpointName';
 
+    String? token = await AuthService().getToken();
+    if (token != null && token.startsWith('local_session_')) {
+      token = null;
+    }
+
     try {
       // FORCE POST as per Phase 42 requirements to fix HTTP 405
       final response = await http.post(
         Uri.parse(fullUrl),
         headers: {
-          'Authorization': basicAuth,
+          'Authorization': (token != null && token.isNotEmpty) ? 'Bearer $token' : basicAuth,
           'Content-Type': 'application/json',
         },
         body: json.encode({

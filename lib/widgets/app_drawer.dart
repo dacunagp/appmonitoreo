@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentRoute;
@@ -95,6 +96,7 @@ class AppDrawer extends StatelessWidget {
                   targetRoute: '/info',
                   isDarkMode: isDarkMode,
                 ),
+
                 _buildMenuItem(
                   context,
                   title: 'Usuarios',
@@ -114,6 +116,13 @@ class AppDrawer extends StatelessWidget {
                   title: 'Campañas',
                   icon: Icons.map,
                   targetRoute: '/campanas',
+                  isDarkMode: isDarkMode,
+                ),
+                _buildMenuItem(
+                  context,
+                  title: 'Trazabilidad',
+                  icon: Icons.history_outlined,
+                  targetRoute: '/trazabilidad',
                   isDarkMode: isDarkMode,
                 ),
                 Divider(
@@ -143,6 +152,12 @@ class AppDrawer extends StatelessWidget {
                   targetRoute: '/settings',
                   isDarkMode: isDarkMode,
                 ),
+                Divider(
+                  color: isDarkMode ? Colors.white24 : Colors.grey[300],
+                  indent: 20,
+                  endIndent: 20,
+                ),
+                _buildLogoutItem(context, isDarkMode),
               ],
             ),
           ),
@@ -199,6 +214,51 @@ class AppDrawer extends StatelessWidget {
           if (context.mounted) Navigator.pop(context);
           if (currentRoute != targetRoute) {
             if (context.mounted) Navigator.pushReplacementNamed(context, targetRoute);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildLogoutItem(BuildContext context, bool isDarkMode) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.logout, color: Colors.redAccent),
+        title: const Text(
+          'Cerrar Sesión',
+          style: TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+        onTap: () async {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Cerrar Sesión'),
+              content: const Text('¿Estás seguro de que deseas salir?'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCELAR')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                  child: const Text('SALIR'),
+                ),
+              ],
+            ),
+          );
+
+          if (confirm == true) {
+            await AuthService().logout();
+            if (context.mounted) {
+              Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+            }
           }
         },
       ),

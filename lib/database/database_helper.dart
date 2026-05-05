@@ -102,7 +102,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 17, // 🚀 BUMP A VERSIÓN 17 (ACTUALIZAR SERVIDORES API)
+      version: 21, // 🚀 BUMP A VERSIÓN 21 (HISTORIAL DE CORREOS)
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -299,6 +299,59 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE v17] Error actualizando servidores API: $e');
       }
     }
+
+    if (oldVersion < 18) {
+      try {
+        await _log('🚀 [UPGRADE v18] Agregando email y password a la tabla usuarios...');
+        await db.execute("ALTER TABLE usuarios ADD COLUMN email TEXT;");
+        await db.execute("ALTER TABLE usuarios ADD COLUMN password TEXT;");
+        await _log('✅ [UPGRADE v18] Columnas email y password agregadas exitosamente.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v18] Error agregando columnas de login: $e');
+      }
+    }
+
+    if (oldVersion < 20) {
+      try {
+        await _log('🚀 [UPGRADE v20] Asegurando tabla trazabilidad_cambios...');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS trazabilidad_cambios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitoreo_id INTEGER,
+            usuario_id INTEGER,
+            nombre_usuario TEXT,
+            campo TEXT,
+            valor_anterior TEXT,
+            valor_nuevo TEXT,
+            contexto TEXT,
+            fecha_cambio DATETIME
+          )
+        ''');
+        await _log('✅ [UPGRADE v20] Tabla de trazabilidad verificada/creada.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v20] Error en tabla de trazabilidad: $e');
+      }
+    }
+
+    if (oldVersion < 21) {
+      try {
+        await _log('🚀 [UPGRADE v21] Creando tabla historial_correos...');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS historial_correos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            destinatario TEXT,
+            asunto TEXT,
+            cuerpo TEXT,
+            fecha_envio TEXT,
+            estado TEXT,
+            error_mensaje TEXT
+          )
+        ''');
+        await _log('✅ [UPGRADE v21] Tabla de historial de correos creada.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v21] Error en tabla de correos: $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -441,7 +494,7 @@ class DatabaseHelper {
     ''');
 
     // 2. Standard Catalogs
-    await db.execute('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY, nombre TEXT, apellido TEXT)');
+    await db.execute('CREATE TABLE usuarios (id_usuario INTEGER PRIMARY KEY, nombre TEXT, apellido TEXT, email TEXT, password TEXT)');
     await db.execute('CREATE TABLE matrices (id_matriz INTEGER PRIMARY KEY, nombre_matriz TEXT)');
     await db.execute('CREATE TABLE metodos (id_metodo INTEGER PRIMARY KEY, metodo TEXT)');
     await db.execute('CREATE TABLE tipos_equipo (id_form INTEGER PRIMARY KEY, tipo TEXT)');
@@ -719,6 +772,20 @@ class DatabaseHelper {
       SELECT m.*, COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion
       FROM monitoreos m
       LEFT JOIN stations s ON m.estacion_id = s.id
+      ORDER BY m.fecha_hora DESC
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getSentMonitoreosList() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT m.*, 
+             COALESCE(s.name, 'Estación Desconocida') AS nombre_estacion,
+             COALESCE(u.nombre || ' ' || u.apellido, 'Inspector Desconocido') AS nombre_inspector
+      FROM monitoreos m
+      LEFT JOIN stations s ON m.estacion_id = s.id
+      LEFT JOIN usuarios u ON m.usuario_id = u.id_usuario
+      WHERE m.sync_status = 'success' OR m.is_draft = 2
       ORDER BY m.fecha_hora DESC
     ''');
   }
@@ -1279,7 +1346,7 @@ class DatabaseHelper {
     Batch batch = db.batch();
     batch.delete('usuarios');
     for (var u in items) {
-      batch.insert('usuarios', u.toMap());
+      batch.insert('usuarios', u.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -1511,7 +1578,12 @@ class DatabaseHelper {
     try {
       batch.delete('usuarios');
       for (var u in usuarios) {
-        batch.insert('usuarios', u);
+        // Map common keys if they come with different names from API
+        final map = Map<String, dynamic>.from(u);
+        if (map.containsKey('contrasenia') && !map.containsKey('password')) {
+          map['password'] = map['contrasenia'];
+        }
+        batch.insert('usuarios', map, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
       await _log('✅ [SYNC-USUARIOS] Éxito. ${usuarios.length} usuarios sincronizados.');
@@ -1595,6 +1667,64 @@ class DatabaseHelper {
 
   /// Stream para escuchar los cambios en notificaciones.
   Stream<List<Map<String, dynamic>>> get notificacionesStream => _notificacionesController.stream;
+
+  // --- MÉTODOS PARA TRAZABILIDAD (Phase 170) ---
+
+  Future<int> saveAuditoriaCambio(AuditoriaCambio cambio) async {
+    final db = await database;
+    return await db.insert('trazabilidad_cambios', cambio.toMap());
+  }
+
+  Future<List<AuditoriaCambio>> getAuditoriaPorMonitoreo(int monitoreoId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'trazabilidad_cambios',
+      where: 'monitoreo_id = ?',
+      whereArgs: [monitoreoId],
+      orderBy: 'fecha_cambio DESC',
+    );
+    return maps.map((m) => AuditoriaCambio.fromMap(m)).toList();
+  }
+
+  Future<int> deleteAuditoriaPorMonitoreo(int monitoreoId) async {
+    final db = await database;
+    return await db.delete(
+      'trazabilidad_cambios',
+      where: 'monitoreo_id = ?',
+      whereArgs: [monitoreoId],
+    );
+  }
+
+  Future<int> clearAllAuditoria() async {
+    final db = await database;
+    return await db.delete('trazabilidad_cambios');
+  }
+
+  // --- MÉTODOS PARA HISTORIAL DE CORREOS (v21) ---
+
+  Future<int> saveCorreoHistorial(CorreoEnviado correo) async {
+    final db = await database;
+    return await db.insert('historial_correos', correo.toMap());
+  }
+
+  Future<List<CorreoEnviado>> getHistorialCorreos() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'historial_correos',
+      orderBy: 'fecha_envio DESC'
+    );
+    return maps.map((m) => CorreoEnviado.fromMap(m)).toList();
+  }
+
+  Future<int> deleteCorreoHistorial(int id) async {
+    final db = await database;
+    return await db.delete('historial_correos', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> clearAllCorreoHistorial() async {
+    final db = await database;
+    return await db.delete('historial_correos');
+  }
 
   /// Método privado para emitir el último estado de la tabla de notificaciones conectada al Stream.
   Future<void> _notificarCambios() async {

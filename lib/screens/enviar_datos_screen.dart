@@ -8,6 +8,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 import '../models/models.dart';
+import '../services/auth_service.dart';
 
 class EnviarDatosScreen extends StatefulWidget {
   const EnviarDatosScreen({super.key});
@@ -176,15 +177,17 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
 
       final Uri syncUrl = Uri.parse(config['url'] + endpointPath);
       
-      final prefs = await SharedPreferences.getInstance();
-      final String token = prefs.getString('token') ?? '';
+      String? token = await AuthService().getToken();
+      if (token != null && token.startsWith('local_session_')) {
+        token = null;
+      }
       
       Map<String, String> headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       };
 
-      if (token.isNotEmpty) {
+      if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       } else {
         final auth = '${config['usuario']}:${config['contrasenia']}';

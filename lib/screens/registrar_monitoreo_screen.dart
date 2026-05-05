@@ -21,6 +21,7 @@ import 'package:utm/utm.dart';
 import 'package:intl/intl.dart';
 import 'package:signature/signature.dart';
 import 'chart_analysis_screen.dart';
+import '../services/auth_service.dart';
 
 class RegistrarMonitoreoScreen extends StatefulWidget {
   final int? registroId;
@@ -85,6 +86,9 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   double? _estacionLatitud;
   double? _estacionLongitud;
   String? _firmaPath;
+
+  // --- TRAZABILIDAD (Phase 170) ---
+  final Map<String, String> _snapshot = {};
 
   final SignatureController _signatureController = SignatureController(
     penStrokeWidth: 3,
@@ -153,13 +157,14 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
   bool? _muestreoHidroquimico; 
   bool? _muestreoIsotopico;
+  
+  late final bool _wasOriginallyExistingRecord;
 
   // --- VALIDATION GETTERS ---
   bool get _isDatosMonitoreoComplete {
     if (_isMonitoreoFallido) return _obsController.text.isNotEmpty;
     return _programaSeleccionado != null && 
-           _estacionSeleccionada != null && 
-           _inspectorSeleccionado != null;
+           _estacionSeleccionada != null;
   }
 
   bool get _isMultiparametroComplete {
@@ -190,6 +195,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   @override
   void initState() {
     super.initState();
+    _wasOriginallyExistingRecord = widget.registroId != null;
     _currentRegistroId = widget.registroId;
     _loadDropdownData();
     
@@ -215,20 +221,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     // Dynamically evaluate if it should be a draft
     bool isDraft = !_isFormularioCompleto;
     
-    await _guardarInterno(isDraft: isDraft);
+    await _guardarInterno(isDraft: isDraft, isAutoSave: true);
   }
 
-  Future<void> _guardarInterno({required bool isDraft}) async {
+  Future<void> _guardarInterno({required bool isDraft, bool isAutoSave = false}) async {
     try {
       // 1. Build Header Map
-      int? inspectorId;
-      if (_inspectorSeleccionado != null) {
-        final usuarios = await _dbHelper.getUsuarios();
-        try {
-          final inspector = usuarios.firstWhere((u) => '${u.nombre} ${u.apellido}' == _inspectorSeleccionado);
-          inspectorId = inspector.idUsuario;
-        } catch (_) {}
-      }
+      final int? inspectorId = await AuthService().getUserId();
 
       final Map<String, dynamic> header = {
         'id': _currentRegistroId,
@@ -256,7 +255,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'turbiedad': double.tryParse(_paramControllers['turbiedad']?.text ?? ''),
         'profundidad': double.tryParse(_paramControllers['profundidad']?.text ?? ''),
         'nivel': double.tryParse(_paramControllers['nivel']?.text ?? ''),
-        // Phase 115: Caudal & new photo columns
         'equipo_caudal': _selectedEquipoCaudalId,
         'nivel_caudal': double.tryParse(_caudalController.text.replaceAll(',', '.')),
         'fecha_hora_caudal': _fechaHoraCaudal?.toIso8601String().replaceAll('T', ' ').split('.').first,
@@ -266,6 +264,20 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'firma_path': _firmaPath,
         'is_draft': isDraft ? 1 : 0,
       };
+
+      // --- TRAZABILIDAD: Log only if it's an EDIT of an ALREADY existing record, and NOT an autosave ---
+      bool isFirstSave = _currentRegistroId == null;
+      if (_wasOriginallyExistingRecord && !isAutoSave) {
+        await _logChange('observacion', _snapshot['observacion'] ?? '', _obsController.text);
+        await _logChange('monitoreo_fallido', _snapshot['monitoreo_fallido'] ?? '', _isMonitoreoFallido.toString());
+        await _logChange('cod_laboratorio', _snapshot['cod_laboratorio'] ?? '', _codLabController.text);
+        await _logChange('metodo_id', _snapshot['metodo_id'] ?? '', _metodoSeleccionado?.idMetodo.toString() ?? '');
+        
+        // Log individual parameter changes
+        _paramControllers.forEach((key, controller) {
+           _logChange(key, _snapshot[key] ?? '', controller.text);
+        });
+      }
 
       // Phase 169: Data Sanitization for Failed Monitoring
       if (_isMonitoreoFallido) {
@@ -338,8 +350,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       // 3. Save via Transaction
       final id = await _dbHelper.saveMonitoreoTransaction(header, detalles);
       
-      if (_currentRegistroId == null) {
+      if (isFirstSave) {
         setState(() => _currentRegistroId = id);
+        // --- TRAZABILIDAD: Tomar primer snapshot después de la creación ---
+        _takeSnapshot();
       }
     } catch (e) {
       if (mounted) {
@@ -745,6 +759,68 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         await _updateHistoricalRanges(_estacionSeleccionada!.name);
       }
     }
+    
+    // --- TRAZABILIDAD: Create snapshot after loading existing data ---
+    _takeSnapshot();
+  }
+
+  // Phase 170: Capture the current state of all relevant fields
+  void _takeSnapshot() {
+    _snapshot.clear();
+    _snapshot['observacion'] = _obsController.text;
+    _snapshot['monitoreo_fallido'] = _isMonitoreoFallido.toString();
+    _snapshot['cod_laboratorio'] = _codLabController.text;
+    _snapshot['metodo_id'] = _metodoSeleccionado?.idMetodo.toString() ?? '';
+    _snapshot['matriz_id'] = _matrizSeleccionada?.idMatriz.toString() ?? '';
+
+    // Capture dynamic params
+    _paramControllers.forEach((key, controller) {
+      _snapshot[key] = controller.text;
+    });
+
+    // Multi-instance params
+    for (var inst in _selectedMultiInstancias) {
+      _snapshot['multi_${inst.uniqueId}'] = inst.controller.text;
+    }
+    for (var inst in _selectedAdicionalesInstancias) {
+      _snapshot['extra_${inst.uniqueId}'] = inst.controller.text;
+    }
+    
+    debugPrint('📸 [TRAZA] Snapshot capturado (${_snapshot.length} campos)');
+  }
+
+  Future<void> _logChange(String campo, String anterior, String nuevo) async {
+    if (anterior == nuevo) return;
+    if (_currentRegistroId == null) return;
+
+    final userName = await AuthService().getUserName() ?? 'Usuario';
+    final userId = await AuthService().getUserId() ?? 0;
+    
+    final auditoria = AuditoriaCambio(
+      monitoreoId: _currentRegistroId!,
+      usuarioId: userId,
+      nombreUsuario: userName,
+      campo: campo,
+      valorAnterior: anterior,
+      valorNuevo: nuevo,
+      contexto: '${_programaSeleccionado?.name ?? 'Sin Campaña'} - ${_estacionSeleccionada?.name ?? 'Sin Estación'}',
+      fechaCambio: DateTime.now(),
+    );
+
+    await _dbHelper.saveAuditoriaCambio(auditoria);
+    debugPrint('📝 [TRAZA] Cambio registrado: $campo ($anterior -> $nuevo)');
+    
+    // Update snapshot for this field
+    _snapshot[campo] = nuevo;
+  }
+
+  void _showHistorialCambios() {
+    if (_currentRegistroId == null) return;
+    Navigator.pushNamed(
+      context, 
+      '/trazabilidad', 
+      arguments: {'monitoreoId': _currentRegistroId}
+    );
   }
 
   Future<void> _onProgramaChanged(String name) async {
@@ -1238,6 +1314,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   context,
                   MaterialPageRoute(builder: (context) => AdministracionScreen(initialIndex: tabIndex)),
                 ).then((_) => _loadDropdownData());
+              } else if (value == 'historial') {
+                _showHistorialCambios();
               }
             },
             itemBuilder: (BuildContext context) {
@@ -1262,6 +1340,17 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                     ],
                   ),
                 ),
+                if (_currentRegistroId != null)
+                  const PopupMenuItem<String>(
+                    value: 'historial',
+                    child: Row(
+                      children: [
+                        Icon(Icons.history, color: Colors.blueAccent),
+                        SizedBox(width: 8),
+                        Text('Ver Historial de Cambios'),
+                      ],
+                    ),
+                  ),
               ];
             },
           ),
@@ -2044,19 +2133,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             options: _estaciones.map((s) => s.name).toList(),
             isDarkMode: isDarkMode,
             onChanged: _onStationChanged,
-          ),
-          
-          SearchableDropdown(
-            label: 'Inspector',
-            hintText: 'Seleccione inspector',
-            searchHintText: 'Buscar inspector...',
-            selectedValue: _inspectorSeleccionado,
-            options: _inspectoresOptions,
-            isDarkMode: isDarkMode,
-            onChanged: (val) {
-              setState(() => _inspectorSeleccionado = val);
-              _saveAsDraft();
-            },
           ),
           
           SearchableDropdown(

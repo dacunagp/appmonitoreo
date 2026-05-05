@@ -72,11 +72,15 @@ class Usuario {
   final int idUsuario;
   final String nombre;
   final String apellido;
+  final String? email;
+  final String? password;
 
   Usuario({
     required this.idUsuario,
     required this.nombre,
     required this.apellido,
+    this.email,
+    this.password,
   });
 
   factory Usuario.fromJson(Map<String, dynamic> json) {
@@ -84,6 +88,8 @@ class Usuario {
       idUsuario: json['id_usuario'] ?? json['id'] ?? 0,
       nombre: json['nombre'] ?? 'Sin nombre',
       apellido: json['apellido'] ?? '',
+      email: json['email'],
+      password: json['password'] ?? json['contrasenia'],
     );
   }
 
@@ -92,6 +98,8 @@ class Usuario {
       'id_usuario': idUsuario,
       'nombre': nombre,
       'apellido': apellido,
+      'email': email,
+      'password': password,
     };
   }
 
@@ -546,5 +554,101 @@ class Monitoreo {
       print('Error transforming JSON for Sync: $e');
       return [];
     }
+  }
+}
+
+class AuditoriaCambio {
+  final int? id;
+  final int monitoreoId;
+  final int usuarioId;
+  final String nombreUsuario;
+  final String campo;
+  final String valorAnterior;
+  final String valorNuevo;
+  final String contexto;
+  final DateTime fechaCambio;
+
+  AuditoriaCambio({
+    this.id,
+    required this.monitoreoId,
+    required this.usuarioId,
+    required this.nombreUsuario,
+    required this.campo,
+    required this.valorAnterior,
+    required this.valorNuevo,
+    required this.contexto,
+    required this.fechaCambio,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'monitoreo_id': monitoreoId,
+      'usuario_id': usuarioId,
+      'nombre_usuario': nombreUsuario,
+      'campo': campo,
+      'valor_anterior': valorAnterior,
+      'valor_nuevo': valorNuevo,
+      'contexto': contexto,
+      'fecha_cambio': fechaCambio.toIso8601String(),
+    };
+  }
+
+  factory AuditoriaCambio.fromMap(Map<String, dynamic> map) {
+    return AuditoriaCambio(
+      id: map['id'],
+      monitoreoId: map['monitoreo_id'],
+      usuarioId: map['usuario_id'],
+      nombreUsuario: map['nombre_usuario'] ?? 'Sistema',
+      campo: map['campo'] ?? '',
+      valorAnterior: map['valor_anterior'] ?? '',
+      valorNuevo: map['valor_nuevo'] ?? '',
+      contexto: map['contexto'] ?? '',
+      fechaCambio: DateTime.parse(map['fecha_cambio']),
+    );
+  }
+}
+
+class CorreoEnviado {
+  final int? id;
+  final String destinatario;
+  final String asunto;
+  final String cuerpo;
+  final DateTime fechaEnvio;
+  final String estado; // 'Enviado', 'Error'
+  final String? errorMensaje;
+
+  CorreoEnviado({
+    this.id,
+    required this.destinatario,
+    required this.asunto,
+    required this.cuerpo,
+    required this.fechaEnvio,
+    required this.estado,
+    this.errorMensaje,
+  });
+
+  factory CorreoEnviado.fromMap(Map<String, dynamic> map) {
+    return CorreoEnviado(
+      id: map['id'],
+      destinatario: map['destinatario'] ?? '',
+      asunto: map['asunto'] ?? '',
+      cuerpo: map['cuerpo'] ?? '',
+      fechaEnvio: DateTime.parse(map['fecha_envio'] ?? DateTime.now().toIso8601String()),
+      estado: map['estado'] ?? 'Error',
+      errorMensaje: map['error_mensaje'],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      if (id != null) 'id': id,
+      'destinatario': destinatario,
+      'asunto': asunto,
+      'cuerpo': cuerpo,
+      'fecha_envio': fechaEnvio.toIso8601String(),
+      'estado': estado,
+      'error_mensaje': errorMensaje,
+    };
   }
 }

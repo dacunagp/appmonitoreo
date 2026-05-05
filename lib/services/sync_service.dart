@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import '../database/database_helper.dart';
+import '../services/auth_service.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
@@ -50,7 +51,10 @@ class SyncService {
       } catch (_) {}
 
       final Uri syncUrl = Uri.parse(config['url'] + endpointPath);
-      final String token = prefs.getString('token') ?? '';
+      String? token = await AuthService().getToken();
+      if (token != null && token.startsWith('local_session_')) {
+        token = null;
+      }
       
       List<Map<String, dynamic>> payloadList = [];
       for (var record in pending) {
@@ -105,7 +109,7 @@ class SyncService {
         'Accept': 'application/json',
       };
 
-      if (token.isNotEmpty) {
+      if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       } else {
         final auth = '${config['usuario']}:${config['contrasenia']}';
