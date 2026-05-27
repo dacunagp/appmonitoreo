@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../database/database_helper.dart';
 import '../models/models.dart';
+import '../services/auth_service.dart';
 
 class EnviarCorreoForm extends StatefulWidget {
   const EnviarCorreoForm({super.key});
@@ -13,151 +14,50 @@ class EnviarCorreoForm extends StatefulWidget {
 
 class _EnviarCorreoFormState extends State<EnviarCorreoForm> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _destinatarioController = TextEditingController();
   final TextEditingController _asuntoController = TextEditingController();
-  final TextEditingController _cuerpoController = TextEditingController();
+  final TextEditingController _mensajeExtraController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   
   bool _isSending = false;
   final DatabaseHelper _dbHelper = DatabaseHelper();
-  List<Map<String, dynamic>> _selectedRecords = [];
+  
+  List<Usuario> _usuarios = [];
+  List<String> _destinatariosSeleccionados = [];
+  String _searchQuery = '';
 
-  String _formatDate(String? isoString) {
-    if (isoString == null || isoString.isEmpty) return 'Sin fecha';
-    try {
-      final DateTime dt = DateTime.parse(isoString);
-      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return isoString;
-    }
+  @override
+  void initState() {
+    super.initState();
+    _loadDestinatarios();
   }
 
-  Future<void> _pickRecords() async {
-    final allRecords = await _dbHelper.getSentMonitoreosList();
-    if (!mounted) return;
-
-    String dialogSearchQuery = '';
-    
-    await showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final filtered = allRecords.where((r) {
-            final name = (r['nombre_estacion'] ?? '').toString().toLowerCase();
-            return name.contains(dialogSearchQuery.toLowerCase());
-          }).toList();
-
-          return AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.attachment, color: Colors.blue),
-                SizedBox(width: 10),
-                Text('Adjuntar Registros'),
-              ],
-            ),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: 500,
-              child: Column(
-                children: [
-                  TextField(
-                    decoration: const InputDecoration(
-                      hintText: 'Buscar por estación...',
-                      prefixIcon: Icon(Icons.search),
-                      isDense: true,
-                    ),
-                    onChanged: (val) {
-                      setDialogState(() => dialogSearchQuery = val);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: filtered.isEmpty 
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.search_off, size: 48, color: Colors.grey.withOpacity(0.5)),
-                              const SizedBox(height: 10),
-                              const Text('No se encontraron registros enviados', style: TextStyle(color: Colors.grey)),
-                            ],
-                          ),
-                        )
-                      : ListView.separated(
-                          itemCount: filtered.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final record = filtered[index];
-                            final isSelected = _selectedRecords.any((r) => r['id'] == record['id']);
-                            
-                            return CheckboxListTile(
-                              title: Text(record['nombre_estacion'] ?? 'Estación S/N', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('Inspector: ${record['nombre_inspector']} • ${_formatDate(record['fecha_hora'])}', style: const TextStyle(fontSize: 12)),
-                              value: isSelected,
-                              activeColor: Colors.blue,
-                              onChanged: (val) {
-                                setState(() {
-                                  if (val == true) {
-                                    _selectedRecords.add(record);
-                                  } else {
-                                    _selectedRecords.removeWhere((r) => r['id'] == record['id']);
-                                  }
-                                });
-                                setDialogState(() {});
-                              },
-                            );
-                          },
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('CERRAR')),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context), 
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
-                child: const Text('ACEPTAR'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  Future<void> _loadDestinatarios() async {
+    final users = await _dbHelper.getUsuarios();
+    setState(() {
+      _usuarios = users;
+    });
   }
 
-  String _formatRecordsForEmail() {
-    if (_selectedRecords.isEmpty) return '';
-    
-    StringBuffer buffer = StringBuffer();
-    buffer.writeln('\n--- REGISTROS ADJUNTOS ---');
-    for (var r in _selectedRecords) {
-      buffer.writeln('• Estación: ${r['nombre_estacion']}');
-      buffer.writeln('  Inspector: ${r['nombre_inspector']} | Fecha: ${_formatDate(r['fecha_hora'])}');
-      if (r['ph'] != null) buffer.writeln('  pH: ${r['ph']}');
-      if (r['temperatura'] != null) buffer.writeln('  Temp: ${r['temperatura']}°C');
-      if (r['conductividad'] != null) buffer.writeln('  Cond: ${r['conductividad']} uS/cm');
-      if (r['nivel'] != null) buffer.writeln('  Nivel: ${r['nivel']} m');
-      if (r['observacion'] != null && r['observacion'].toString().isNotEmpty) {
-        buffer.writeln('  Obs: ${r['observacion']}');
-      }
-      buffer.writeln('---------------------------');
-    }
-    return buffer.toString();
+  @override
+  void dispose() {
+    _asuntoController.dispose();
+    _mensajeExtraController.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _enviarCorreo() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    if (_destinatariosSeleccionados.isEmpty) {
+      _showSnackBar('Seleccione al menos un destinatario', isError: true);
+      return;
+    }
 
     setState(() => _isSending = true);
 
-    final destinatario = _destinatarioController.text.trim();
     final asunto = _asuntoController.text.trim();
-    String cuerpo = _cuerpoController.text.trim();
-    
-    final String adjuntos = _formatRecordsForEmail();
-    if (adjuntos.isNotEmpty) {
-      cuerpo += '\n$adjuntos';
-    }
+    final cuerpo = _mensajeExtraController.text.trim();
 
     try {
       final config = await _dbHelper.getActiveUrlConfig();
@@ -169,222 +69,509 @@ class _EnviarCorreoFormState extends State<EnviarCorreoForm> {
         final auth = '${config['usuario']}:${config['contrasenia']}';
         final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
         
+        final endpoints = await _dbHelper.getEndpoints();
+        String endpointPath = 'enviar-correo';
         try {
-          final response = await http.post(
-            Uri.parse('${baseUrl}enviar-correo'), 
-            headers: {
-              'Authorization': basicAuth,
-              'Content-Type': 'application/json',
-            },
-            body: json.encode({
-              'destinatario': destinatario,
-              'asunto': asunto,
-              'cuerpo': cuerpo,
-            }),
-          ).timeout(const Duration(seconds: 15));
+          final target = endpoints.firstWhere((e) => e['nombre'].toString().contains('enviar-correo'));
+          endpointPath = target['nombre'];
+        } catch (_) {}
 
-          if (response.statusCode == 200 || response.statusCode == 201) {
-            success = true;
-          } else {
-            errorMsg = 'Error servidor: ${response.statusCode}';
-          }
-        } catch (e) {
-          errorMsg = e.toString();
+        final String fullUrl = '${baseUrl.endsWith('/') ? baseUrl : '$baseUrl/'}$endpointPath';
+        
+        final response = await http.post(
+          Uri.parse(fullUrl),
+          headers: {
+            'Authorization': basicAuth,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'destinatario': _destinatariosSeleccionados.join(','),
+            'asunto': asunto,
+            'cuerpo': cuerpo,
+          }),
+        ).timeout(const Duration(seconds: 15));
+
+        if (response.statusCode == 200) {
+          success = true;
+        } else {
+          errorMsg = jsonDecode(response.body)['detail'] ?? 'Error de servidor';
         }
       } else {
-        errorMsg = 'No hay configuración de API';
+        errorMsg = "Configuración de servidor no encontrada.";
       }
 
-      final registro = CorreoEnviado(
-        destinatario: destinatario,
-        asunto: asunto,
-        cuerpo: cuerpo,
-        fechaEnvio: DateTime.now(),
-        estado: success ? 'Enviado' : 'Error',
-        errorMensaje: errorMsg,
-      );
-
-      await _dbHelper.saveCorreoHistorial(registro);
-
       if (!mounted) return;
+      
+      try {
+        await _dbHelper.saveCorreoHistorial(
+          CorreoEnviado(
+            destinatario: _destinatariosSeleccionados.join(','),
+            asunto: asunto,
+            cuerpo: cuerpo,
+            fechaEnvio: DateTime.now(),
+            estado: success ? 'Enviado' : 'Error',
+            errorMensaje: success ? null : errorMsg,
+          ),
+        );
+      } catch (dbErr) {
+        debugPrint('Error guardando historial: $dbErr');
+      }
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ Correo enviado correctamente'), backgroundColor: Colors.green),
-        );
-        _formKey.currentState!.reset();
-        _destinatarioController.clear();
-        _asuntoController.clear();
-        _cuerpoController.clear();
-        setState(() => _selectedRecords = []);
+        _showSnackBar('✅ Notificación enviada', isError: false);
+        
+        // --- ANALYTICS NOTIFICATION (Fire and Forget) ---
+        // Pasamos null en estacionId ya que se eliminó el selector
+        _notificarAnalytics(asunto, cuerpo, null);
+
+        setState(() {
+          _asuntoController.clear();
+          _mensajeExtraController.clear();
+          _destinatariosSeleccionados.clear(); // Limpiar destinatarios
+          _searchController.clear();
+          _searchQuery = '';
+        });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('⚠️ El correo se registró pero el servidor falló: $errorMsg')),
-        );
+        _showSnackBar('❌ Error: $errorMsg', isError: true);
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error inesperado: $e'), backgroundColor: Colors.red),
-      );
+      if (mounted) _showSnackBar('❌ Error: $e', isError: true);
+      
+      try {
+        await _dbHelper.saveCorreoHistorial(
+          CorreoEnviado(
+            destinatario: _destinatariosSeleccionados.join(','),
+            asunto: asunto,
+            cuerpo: cuerpo,
+            fechaEnvio: DateTime.now(),
+            estado: 'Error',
+            errorMensaje: e.toString(),
+          ),
+        );
+      } catch (_) {}
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
   }
 
+  Future<void> _notificarAnalytics(String asunto, String mensaje, int? estacionId) async {
+    try {
+      final config = await _dbHelper.getActiveUrlConfig();
+      if (config == null) return;
+
+      final baseUrl = config['url'];
+      final auth = '${config['usuario']}:${config['contrasenia']}';
+      final String basicAuth = 'Basic ${base64Encode(utf8.encode(auth))}';
+      final String inspector = await AuthService().getUserName() ?? 'Inspector Desconocido';
+      
+      final String fullUrl = '${baseUrl.endsWith('/') ? baseUrl : '$baseUrl/'}comunicaciones/notificar-email';
+
+      await http.post(
+        Uri.parse(fullUrl),
+        headers: {
+          'Authorization': basicAuth,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'inspector': inspector,
+          'asunto': asunto,
+          'mensaje': mensaje,
+          'fecha': DateTime.now().toIso8601String(),
+          'estacion_id': estacionId, // Será null, Laravel lo aceptará sin problema
+        }),
+      ).timeout(const Duration(seconds: 5));
+      
+      debugPrint('📊 [ANALYTICS] Notificación enviada exitosamente a FastAPI');
+    } catch (e) {
+      debugPrint('⚠️ [ANALYTICS] Error silencioso al notificar analíticas: $e');
+    }
+  }
+
+  void _showSnackBar(String message, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.redAccent : Colors.blueAccent,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20.0),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Completa los campos para enviar una notificación vía correo electrónico.',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-            const SizedBox(height: 25),
-            
-            TextFormField(
-              controller: _destinatarioController,
-              decoration: InputDecoration(
-                labelText: 'Destinatario',
-                hintText: 'ejemplo@correo.com',
-                prefixIcon: const Icon(Icons.email_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              keyboardType: TextInputType.emailAddress,
-              validator: (value) {
-                if (value == null || value.isEmpty) return 'Ingresa un destinatario';
-                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
-                  return 'Ingresa un email válido';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 20),
-            
-            TextFormField(
-              controller: _asuntoController,
-              decoration: InputDecoration(
-                labelText: 'Asunto',
-                prefixIcon: const Icon(Icons.title),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              validator: (value) => (value == null || value.isEmpty) ? 'Ingresa un asunto' : null,
-            ),
-            const SizedBox(height: 20),
-
-            Card(
-              elevation: 0,
-              color: isDarkMode ? Colors.white.withOpacity(0.05) : Colors.blueGrey[50],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.blue.withOpacity(0.2), width: 1),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.attachment_rounded, size: 20, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            const Text('Registros Adjuntos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            if (_selectedRecords.isNotEmpty)
-                              Container(
-                                margin: const EdgeInsets.only(left: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(12)),
-                                child: Text('${_selectedRecords.length}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                              ),
-                          ],
-                        ),
-                        TextButton.icon(
-                          onPressed: _pickRecords,
-                          icon: const Icon(Icons.add_circle_outline, size: 20),
-                          label: const Text('Adjuntar'),
-                          style: TextButton.styleFrom(foregroundColor: Colors.blue),
-                        ),
-                      ],
+    return Scaffold(
+      backgroundColor: isDarkMode ? const Color(0xFF121212) : const Color(0xFFF5F7FA),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              const SizedBox(height: 32),
+              
+              _buildSectionLabel('CONFIGURACIÓN DE ENVÍO'),
+              const SizedBox(height: 12),
+              _buildSectionCard(
+                isDarkMode: isDarkMode,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildMultiSelectField(
+                      label: 'Destinatarios',
+                      icon: Icons.alternate_email_rounded,
+                      isDarkMode: isDarkMode,
                     ),
+                    const SizedBox(height: 20),
+                    
+                    TextFormField(
+                      controller: _asuntoController,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      decoration: InputDecoration(
+                        labelText: 'Asunto del reporte',
+                        hintText: 'Ej: Reporte de fallas, Consulta de insumos...',
+                        prefixIcon: const Icon(Icons.short_text_rounded, color: Colors.blueAccent),
+                        filled: true,
+                        fillColor: isDarkMode ? Colors.black26 : const Color(0xFFF8F9FA),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(15),
+                          borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Por favor, ingrese un asunto';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 28),
+              
+              _buildSectionLabel('DETALLES TÉCNICOS'),
+              const SizedBox(height: 12),
+              _buildSectionCard(
+                isDarkMode: isDarkMode,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextFormField(
+                      controller: _mensajeExtraController,
+                      maxLines: 8,
+                      style: const TextStyle(fontSize: 15, height: 1.4),
+                      decoration: InputDecoration(
+                        hintText: 'Por favor, describa detalladamente la incidencia, solicitud o reporte aquí...',
+                        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+                        filled: true,
+                        fillColor: isDarkMode ? Colors.black26 : const Color(0xFFF8F9FA),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.all(20),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'La descripción técnica es obligatoria';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 48),
+              _buildSubmitButton(),
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Centro de Notificaciones',
+          style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: -1),
+        ),
+        SizedBox(height: 8),
+        Text(
+          'Envíe reportes, solicitudes o notificaciones directas al equipo de supervisión.',
+          style: TextStyle(fontSize: 14, color: Colors.blueGrey, height: 1.4),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w800,
+        color: Colors.blueAccent,
+        letterSpacing: 1.2,
+      ),
+    );
+  }
+
+  Widget _buildSectionCard({required Widget child, required bool isDarkMode}) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDarkMode ? 0.2 : 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+        border: Border.all(
+          color: isDarkMode ? Colors.white.withOpacity(0.05) : Colors.blueGrey.withOpacity(0.05),
+        ),
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildMultiSelectField({
+    required String label,
+    required IconData icon,
+    required bool isDarkMode,
+  }) {
+    final filteredUsers = _usuarios.where((u) {
+      final query = _searchQuery.toLowerCase();
+      final name = '${u.nombre} ${u.apellido}'.toLowerCase();
+      final email = (u.email ?? '').toLowerCase();
+      return name.contains(query) || email.contains(query);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Theme(
+          data: Theme.of(context).copyWith(
+            dividerColor: Colors.transparent,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+          ),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            onExpansionChanged: (expanded) {
+              if (!expanded) {
+                FocusScope.of(context).unfocus();
+              }
+            },
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 16, color: Colors.blueAccent),
+                    const SizedBox(width: 8),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blueAccent.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  _destinatariosSeleccionados.isEmpty 
+                      ? 'Seleccione' 
+                      : '${_destinatariosSeleccionados.length} seleccionados',
+                  style: TextStyle(
+                    fontSize: 13, 
+                    fontWeight: FontWeight.w500,
+                    color: _destinatariosSeleccionados.isEmpty ? Colors.grey : Colors.blueAccent,
                   ),
-                  if (_selectedRecords.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 20),
-                      child: Text('Selecciona registros ya enviados para adjuntar un resumen técnico.', style: TextStyle(fontSize: 13, color: Colors.grey, fontStyle: FontStyle.italic)),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: ListView.builder(
+                ),
+              ],
+            ),
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 8),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? Colors.white.withOpacity(0.05) : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (val) => setState(() => _searchQuery = val),
+                  decoration: InputDecoration(
+                    icon: Icon(Icons.search, size: 18, color: Colors.grey[600]),
+                    hintText: 'Buscar destinatario...',
+                    hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 250),
+                child: filteredUsers.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text('No se encontraron resultados', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      )
+                    : ListView.builder(
                         shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _selectedRecords.length,
-                        itemBuilder: (context, idx) {
-                          final r = _selectedRecords[idx];
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isDarkMode ? Colors.black26 : Colors.white70,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.withOpacity(0.1)),
+                        itemCount: filteredUsers.length,
+                        itemBuilder: (context, index) {
+                          final u = filteredUsers[index];
+                          final isSelected = _destinatariosSeleccionados.contains(u.email);
+                          return CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            activeColor: Colors.blueAccent,
+                            dense: true,
+                            title: Text(
+                              '${u.nombre} ${u.apellido}',
+                              style: const TextStyle(fontSize: 14),
                             ),
-                            child: ListTile(
-                              dense: true,
-                              leading: const CircleAvatar(radius: 14, backgroundColor: Colors.blue, child: Icon(Icons.description, size: 14, color: Colors.white)),
-                              title: Text(r['nombre_estacion'] ?? 'S/N', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                              subtitle: Text('Inspector: ${r['nombre_inspector']} • ${_formatDate(r['fecha_hora'])}', style: const TextStyle(fontSize: 11)),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 20),
-                                onPressed: () => setState(() => _selectedRecords.removeWhere((item) => item['id'] == r['id'])),
-                              ),
+                            subtitle: Text(
+                              u.email ?? 'Sin correo',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
                             ),
+                            value: isSelected,
+                            onChanged: u.email == null || u.email!.isEmpty ? null : (bool? checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  _destinatariosSeleccionados.add(u.email!);
+                                } else {
+                                  _destinatariosSeleccionados.remove(u.email);
+                                }
+                              });
+                            },
                           );
                         },
                       ),
-                    ),
+              ),
+            ],
+          ),
+        ),
+        if (_destinatariosSeleccionados.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _destinatariosSeleccionados.map((email) {
+              final usersMatched = _usuarios.where((u) => u.email == email);
+              final displayName = usersMatched.isNotEmpty 
+                  ? '${usersMatched.first.nombre} ${usersMatched.first.apellido}'.trim() 
+                  : email;
+              return Chip(
+                label: Text(displayName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                deleteIcon: const Icon(Icons.cancel_rounded, size: 16),
+                onDeleted: () {
+                  setState(() {
+                    _destinatariosSeleccionados.remove(email);
+                  });
+                },
+                backgroundColor: isDarkMode ? Colors.blueAccent.withOpacity(0.15) : Colors.blueAccent.withOpacity(0.08),
+                labelStyle: TextStyle(color: isDarkMode ? Colors.blue[200] : Colors.blue[800]),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: isDarkMode ? Colors.blueAccent.withOpacity(0.3) : Colors.blueAccent.withOpacity(0.2)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+              );
+            }).toList(),
+          ),
+        ],
+        if (_destinatariosSeleccionados.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 10.0, left: 4),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 14, color: Colors.red[400]),
+                const SizedBox(width: 6),
+                Text('Selección requerida para enviar el reporte', 
+                  style: TextStyle(color: Colors.red[400], fontSize: 12, fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return Container(
+      width: double.infinity,
+      height: 62,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF448AFF), Color(0xFF1976D2)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1976D2).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _isSending ? null : _enviarCorreo,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        child: _isSending 
+            ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+            : const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                  SizedBox(width: 12),
+                  Text(
+                    'ENVIAR REPORTE',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 0.5),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            
-            TextFormField(
-              controller: _cuerpoController,
-              maxLines: 8,
-              decoration: InputDecoration(
-                labelText: 'Mensaje',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              validator: (value) => (value == null || value.isEmpty) ? 'Ingresa el contenido' : null,
-            ),
-            const SizedBox(height: 30),
-            
-            ElevatedButton.icon(
-              onPressed: _isSending ? null : _enviarCorreo,
-              icon: _isSending 
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.send),
-              label: Text(_isSending ? 'Enviando...' : 'ENVIAR CORREO'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                backgroundColor: theme.primaryColor,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

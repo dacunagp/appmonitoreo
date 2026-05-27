@@ -35,7 +35,7 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
     if (isoString == null || isoString.isEmpty) return 'Sin fecha';
     try {
       final DateTime dt = DateTime.parse(isoString);
-      return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (e) {
       return isoString; // fallback
     }
@@ -222,6 +222,11 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
               unitsMap: unitsMap,
             );
 
+            // ---- INICIO FEATURE TRAZABILIDAD ----
+            final logsAuditoria = await _dbHelper.getAuditoriaPorMonitoreo(record['id']);
+            monitoreoMap['trazabilidad'] = logsAuditoria.map((e) => e.toMap()).toList();
+            // ---- FIN FEATURE TRAZABILIDAD ----
+
             // C. Crear MultipartRequest
             final request = http.MultipartRequest('POST', syncUrl);
             request.headers.addAll(headers);
@@ -262,12 +267,41 @@ class _EnviarDatosScreenState extends State<EnviarDatosScreen> {
             if (response.statusCode == 200 || response.statusCode == 201) {
               final responseData = jsonDecode(response.body);
               if (responseData['status'] == 'success') {
+                // 1. Marcar como enviado ('is_draft': 2)
                 await _dbHelper.updateRegistroMonitoreo(record['id'], {'is_draft': 2});
+                
+                // 2. [VINCULACIÓN TRAZABILIDAD] Actualizar IDs locales por IDs reales del servidor
+                if (responseData['ids_registrados'] != null) {
+                  final List<dynamic> mappings = responseData['ids_registrados'];
+                  for (var map in mappings) {
+                    final int? idLocal = map['id_local'];
+                    final int? idServer = map['id_servidor'];
+                    // Intentamos obtener el ID Única formateado (Año_Proyecto_Correlativo)
+                    final dynamic rawId = map['id_unica'] ?? map['id_u'] ?? map['codigo'];
+                    final String? idUnica = rawId?.toString();
+
+                    if (idLocal != null && idServer != null) {
+                      // 1. Actualizar el registro de monitoreo con su ID única del servidor
+                      await _dbHelper.updateRegistroMonitoreo(idLocal, {
+                        'id_unica': idUnica,
+                      });
+
+                      // 2. Propagar el ID y el código a todos los logs de trazabilidad relacionados
+                      await _dbHelper.updateAuditoriaRegistroId(
+                        idLocal, 
+                        idServer, 
+                        idUnica: idUnica
+                      );
+                    }
+                  }
+                }
+
                 enviosExitosos++;
                 debugPrint('✅ [SYNC] Éxito ID ${record['id']} (${recordTimer.elapsedMilliseconds} ms)');
               } else {
                 throw Exception('API: ${responseData['mensaje'] ?? 'Error desconocido'}');
               }
+
             } else if (response.statusCode == 422) {
               debugPrint('❌ [SYNC] ERROR 422: ${response.body}');
               throw Exception('Error de validación (422). Revisa el formato del payload.');

@@ -194,27 +194,6 @@ class _NotificacionesScreenState extends State<NotificacionesScreen> {
                 ),
               ),
 
-              // ── Payload chips ──
-              if (payloadMap != null && payloadMap.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: payloadMap.entries.map((e) {
-                    return Chip(
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      label: Text(
-                        '${e.key}: ${e.value}',
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      backgroundColor: isDarkMode
-                          ? const Color(0xFF1E293B)
-                          : theme.primaryColor.withValues(alpha: 0.1),
-                    );
-                  }).toList(),
-                ),
-              ],
 
               // ── Fecha ──
               const SizedBox(height: 8),

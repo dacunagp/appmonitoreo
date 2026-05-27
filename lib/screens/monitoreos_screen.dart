@@ -8,6 +8,7 @@ import '../database/database_helper.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/enviar_correo_form.dart';
 import '../utils/security_utils.dart';
+import '../services/auth_service.dart';
 import 'registrar_monitoreo_screen.dart';
 
 class MonitoreosScreen extends StatefulWidget {
@@ -266,7 +267,7 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> with SingleTickerPr
                           if (item['fecha_hora'] != null) {
                             try {
                               final DateTime dt = DateTime.parse(item['fecha_hora']);
-                              fechaMostrada = DateFormat('yyyy-MM-dd HH:mm').format(dt); 
+                              fechaMostrada = DateFormat('dd/MM/yyyy HH:mm').format(dt); 
                             } catch (e) {
                               fechaMostrada = item['fecha_hora'].toString();
                             }
@@ -293,7 +294,16 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> with SingleTickerPr
                                 return await _showDeletePinDialog();
                               },
                               onDismissed: (direction) async {
-                                await _dbHelper.deleteRegistroMonitoreo(item['id']);
+                                final userName = await AuthService().getUserName() ?? 'Inspector';
+                                final userId = await AuthService().getUserId() ?? 0;
+                                final contexto = '${item['nombre_estacion'] ?? 'Sin Punto'} - ${item['fecha_hora'] ?? 'Sin Fecha'}';
+                                
+                                await _dbHelper.deleteRegistroMonitoreoConAuditoria(
+                                  id: item['id'],
+                                  nombreUsuario: userName,
+                                  usuarioId: userId,
+                                  contexto: contexto,
+                                );
                                 setState(() {
                                   _monitoreos.removeWhere(
                                       (m) => m['id'] == item['id']);
@@ -413,7 +423,17 @@ class _MonitoreosScreenState extends State<MonitoreosScreen> with SingleTickerPr
     if (!isAuthorized) return;
 
     try {
-      await _dbHelper.deleteRegistroMonitoreo(id);
+      final item = _monitoreos.firstWhere((m) => m['id'] == id);
+      final userName = await AuthService().getUserName() ?? 'Inspector';
+      final userId = await AuthService().getUserId() ?? 0;
+      final contexto = '${item['nombre_estacion'] ?? 'Sin Punto'} - ${item['fecha_hora'] ?? 'Sin Fecha'}';
+
+      await _dbHelper.deleteRegistroMonitoreoConAuditoria(
+        id: id,
+        nombreUsuario: userName,
+        usuarioId: userId,
+        contexto: contexto,
+      );
       _loadMonitoreos();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

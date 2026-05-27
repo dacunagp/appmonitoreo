@@ -101,11 +101,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   List<Station> _estaciones = [];
   List<Matriz> _matrices = [];
   List<EquipoDetalle> _equiposMulti = [];
+  List<EquipoDetalle> _equiposNivel = []; // Added for separation
   List<EquipoDetalle> _turbidimetros = [];
   List<Metodo> _metodos = [];
   String? _inspectorSeleccionado;
   List<String> _inspectoresOptions = [];
   List<String> _equiposMultiOptions = [];
+  List<String> _equiposNivelOptions = []; // Added for separation
   List<String> _turbidimetrosOptions = [];
   List<String> _observacionesPredefinidas = []; // Phase 142
 
@@ -137,7 +139,15 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   
   // LEVEL VARIABLES
   String? _equipoNivelSeleccionado;
-  String? _tipoNivelPozoSeleccionado;
+  String? _selectedTipoPozo;
+  final List<String> _opcionesTipoPozo = [
+    'Pozo de Producción', 
+    'Pozo Monitoreo', 
+    'Pozo Observación', 
+    'Piezómetro', 
+    'Noria'
+  ];
+  String? _tipoNivelSeleccionado; // Phase 180: Dinámico vs Estático
   DateTime? _fechaYHoraNivel;
 
   // Phase 115: CAUDAL VARIABLES
@@ -158,9 +168,34 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   bool? _muestreoHidroquimico; 
   bool? _muestreoIsotopico;
   
-  late final bool _wasOriginallyExistingRecord;
+  late bool _wasOriginallyExistingRecord;
+  bool _wasDraft = false; // Registra si el documento original era un borrador
+
 
   // --- VALIDATION GETTERS ---
+  bool get _isFuentesOFines {
+    final name = _matrizSeleccionada?.nombreMatriz.toLowerCase() ?? '';
+    return name.contains('fuentes de captación') || name.contains('fines industriales');
+  }
+
+  bool get _isSubterranea {
+    final name = _matrizSeleccionada?.nombreMatriz.toLowerCase() ?? '';
+    return name.contains('subterránea') || name.contains('subterranea');
+  }
+
+  bool get _isAguasSuperficiales {
+    final name = _matrizSeleccionada?.nombreMatriz.toLowerCase() ?? '';
+    return name.contains('aguas superficiales');
+  }
+
+  bool get _showNivelSection {
+    return (_isSubterranea || _isFuentesOFines) && !_isMonitoreoFallido;
+  }
+
+  bool get _showCaudalSection {
+    return (_isAguasSuperficiales || _isFuentesOFines) && !_isMonitoreoFallido;
+  }
+
   bool get _isDatosMonitoreoComplete {
     if (_isMonitoreoFallido) return _obsController.text.isNotEmpty;
     return _programaSeleccionado != null && 
@@ -177,7 +212,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
 
   bool get _isNivelComplete {
     return _equipoNivelSeleccionado != null && 
-           _tipoNivelPozoSeleccionado != null && 
+           _selectedTipoPozo != null && 
+           _tipoNivelSeleccionado != null && 
            (_paramControllers['nivel']?.text.isNotEmpty ?? false) && 
            _fechaYHoraNivel != null;
   }
@@ -247,8 +283,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'foto_path': _imagePath,
         'foto_multiparametro': _fotoMultiparametroPath,
         'foto_turbiedad': _fotoTurbiedadPath,
-        'equipo_nivel_id': _equiposMulti.where((e) => e.codigo == _equipoNivelSeleccionado).firstOrNull?.id,
-        'tipo_pozo': _tipoNivelPozoSeleccionado,
+        'equipo_nivel_id': _equiposNivel.where((e) => e.codigo == _equipoNivelSeleccionado).firstOrNull?.id,
+        'tipo_pozo': _selectedTipoPozo,
         'fecha_hora_nivel': _fechaYHoraNivel?.toIso8601String(),
         'latitud': _estacionLatitud,
         'longitud': _estacionLongitud,
@@ -262,21 +298,47 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         'foto_nivel_freatico': _fotoNivelFreaticoPath,
         'foto_muestreo': _fotoMuestreoPath,
         'firma_path': _firmaPath,
+        'tipo_nivel': _tipoNivelSeleccionado,
         'is_draft': isDraft ? 1 : 0,
       };
 
-      // --- TRAZABILIDAD: Log only if it's an EDIT of an ALREADY existing record, and NOT an autosave ---
+      // --- TRAZABILIDAD: Log if it's an EDIT or if we are FINALIZING a draft ---
       bool isFirstSave = _currentRegistroId == null;
+      
+      // Capturamos cambios si el registro YA EXISTÍA al abrir la sesión
       if (_wasOriginallyExistingRecord && !isAutoSave) {
         await _logChange('observacion', _snapshot['observacion'] ?? '', _obsController.text);
         await _logChange('monitoreo_fallido', _snapshot['monitoreo_fallido'] ?? '', _isMonitoreoFallido.toString());
         await _logChange('cod_laboratorio', _snapshot['cod_laboratorio'] ?? '', _codLabController.text);
-        await _logChange('metodo_id', _snapshot['metodo_id'] ?? '', _metodoSeleccionado?.idMetodo.toString() ?? '');
         
-        // Log individual parameter changes
-        _paramControllers.forEach((key, controller) {
-           _logChange(key, _snapshot[key] ?? '', controller.text);
-        });
+        await _logChange('metodo', _snapshot['metodo'] ?? '', _metodoSeleccionado?.metodo ?? '');
+        await _logChange('matriz', _snapshot['matriz'] ?? '', _matrizSeleccionada?.nombreMatriz ?? '');
+        await _logChange('programa', _snapshot['programa'] ?? '', _programaSeleccionado?.name ?? '');
+        await _logChange('estacion', _snapshot['estacion'] ?? '', _estacionSeleccionada?.name ?? '');
+        await _logChange('equipo_multiparametro', _snapshot['equipo_multiparametro'] ?? '', _equipoMultiparametroSeleccionado ?? '');
+        await _logChange('turbidimetro', _snapshot['turbidimetro'] ?? '', _turbidimetroSeleccionado ?? '');
+        await _logChange('equipo_nivel', _snapshot['equipo_nivel'] ?? '', _equipoNivelSeleccionado ?? '');
+        await _logChange('tipo_pozo', _snapshot['tipo_pozo'] ?? '', _selectedTipoPozo ?? '');
+        await _logChange('tipo_nivel', _snapshot['tipo_nivel'] ?? '', _tipoNivelSeleccionado ?? '');
+        await _logChange('equipo_caudal', _snapshot['equipo_caudal'] ?? '', _equiposCaudal.where((e) => e.id == _selectedEquipoCaudalId).firstOrNull?.codigo ?? '');
+        await _logChange('inspector', _snapshot['inspector'] ?? '', _inspectorSeleccionado ?? '');
+        await _logChange('muestreo_hidroquimico', _snapshot['muestreo_hidroquimico'] ?? '', _muestreoHidroquimico?.toString() ?? '');
+        await _logChange('muestreo_isotopico', _snapshot['muestreo_isotopico'] ?? '', _muestreoIsotopico?.toString() ?? '');
+        
+        // Log individual parameter changes (Static VIP fields like Turbiedad)
+        for (var entry in _paramControllers.entries) {
+          await _logChange(entry.key, _snapshot[entry.key] ?? '', entry.value.text);
+        }
+        
+        // Log multi-instance parameter changes (pH, Temperatura, etc.)
+        for (var inst in _selectedMultiInstancias) {
+          await _logChange(inst.parametro.claveInterna, _snapshot['multi_${inst.uniqueId}'] ?? '', inst.controller.text);
+        }
+        
+        // Log additional parameter changes
+        for (var inst in _selectedAdicionalesInstancias) {
+          await _logChange(inst.parametro.claveInterna, _snapshot['extra_${inst.uniqueId}'] ?? '', inst.controller.text);
+        }
       }
 
       // Phase 169: Data Sanitization for Failed Monitoring
@@ -351,9 +413,29 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       final id = await _dbHelper.saveMonitoreoTransaction(header, detalles);
       
       if (isFirstSave) {
-        setState(() => _currentRegistroId = id);
-        // --- TRAZABILIDAD: Tomar primer snapshot después de la creación ---
-        _takeSnapshot();
+        debugPrint('🆕 [TRAZA] Registro #$id creado por primera vez.');
+        setState(() {
+          _currentRegistroId = id;
+          _wasDraft = isDraft;
+        });
+        
+        // Si se guardó como FINAL directamente, tomamos el snapshot con valores vacíos 
+        // para que se registre la "creación" como cambios iniciales.
+        // Si se guardó como BORRADOR, tomamos el snapshot actual para que los cambios 
+        // se cuenten desde este punto en adelante.
+        if (!isDraft) {
+           // Opcional: Si queremos que el primer guardado (Final) registre todo como "Nuevo", 
+           // NO llamaríamos a _takeSnapshot aquí ANTES de los logs. 
+           // Pero los logs ya pasaron arriba y se saltaron porque _wasDraft era false.
+           _takeSnapshot(); 
+        } else {
+           _takeSnapshot();
+        }
+      } else {
+        // Actualizamos estado de borrador si cambió
+        if (isDraft && !_wasDraft) {
+          setState(() => _wasDraft = true);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -404,11 +486,18 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       final metodos = await _dbHelper.getMetodos();
       final usuarios = await _dbHelper.getUsuarios();
       
-      final multiData = await _dbHelper.getEquiposByType('Pozómetro');
+      // Load Multiparámetro equipment (with fallback)
+      var multiData = await _dbHelper.getEquiposByType('Multiparámetro');
+      if (multiData.isEmpty) multiData = await _dbHelper.getEquiposByType('Multiparametro');
+      
+      // Load Pozómetro (Level) equipment (with fallback)
+      var nivelData = await _dbHelper.getEquiposByType('Pozómetro');
+      if (nivelData.isEmpty) nivelData = await _dbHelper.getEquiposByType('Pozometro');
+      if (nivelData.isEmpty) nivelData = await _dbHelper.getEquiposByType('Equipo Nivel');
+
       var turbiData = await _dbHelper.getEquiposByType('Turbidímetro');
-      if (turbiData.isEmpty) {
-        turbiData = await _dbHelper.getEquiposByType('Turbidimetro');
-      }
+      if (turbiData.isEmpty) turbiData = await _dbHelper.getEquiposByType('Turbidimetro');
+      
       // Phase 115: Fetch Molinete equipment for Caudal section
       var caudalData = await _dbHelper.getEquiposByType('Molinete');
       final observaciones = await _dbHelper.getObservacionesPredefinidas(); // Phase 142
@@ -463,6 +552,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
         _inspectoresOptions = usuarios.map((u) => '${u.nombre} ${u.apellido}').toList();
         _equiposMulti = multiData;
         _equiposMultiOptions = multiData.map((e) => e.codigo.toString()).toList();
+        _equiposNivel = nivelData;
+        _equiposNivelOptions = nivelData.map((e) => e.codigo.toString()).toList();
         _turbidimetros = turbiData;
         _turbidimetrosOptions = turbiData.map((e) => e.codigo.toString()).toList();
         _observacionesPredefinidas = observaciones; // Phase 142
@@ -666,6 +757,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     // 3. SINGLE ATOMIC State Update for Data Injection
     setState(() {
       // Basic Fields
+      _wasDraft = data['is_draft'] == 1;
       _isMonitoreoFallido = data['monitoreo_fallido'] == 1;
       if (data['fecha_hora'] != null) {
         _fechaYHoraMuestreo = DateTime.parse(data['fecha_hora']);
@@ -708,12 +800,13 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       }
       if (data['equipo_nivel_id'] != null) {
         try {
-          final eq = _equiposMulti.firstWhere((e) => e.id == data['equipo_nivel_id']);
+          final eq = _equiposNivel.firstWhere((e) => e.id == data['equipo_nivel_id']);
           _equipoNivelSeleccionado = eq.codigo;
         } catch (_) {}
       }
 
-      _tipoNivelPozoSeleccionado = data['tipo_pozo'];
+      _selectedTipoPozo = data['tipo_pozo'];
+      _tipoNivelSeleccionado = data['tipo_nivel']; // Phase 180
       if (data['fecha_hora_nivel'] != null) {
         _fechaYHoraNivel = DateTime.parse(data['fecha_hora_nivel']);
       }
@@ -770,8 +863,20 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
     _snapshot['observacion'] = _obsController.text;
     _snapshot['monitoreo_fallido'] = _isMonitoreoFallido.toString();
     _snapshot['cod_laboratorio'] = _codLabController.text;
-    _snapshot['metodo_id'] = _metodoSeleccionado?.idMetodo.toString() ?? '';
-    _snapshot['matriz_id'] = _matrizSeleccionada?.idMatriz.toString() ?? '';
+    _snapshot['metodo'] = _metodoSeleccionado?.metodo ?? '';
+    _snapshot['matriz'] = _matrizSeleccionada?.nombreMatriz ?? '';
+    _snapshot['programa'] = _programaSeleccionado?.name ?? '';
+    _snapshot['estacion'] = _estacionSeleccionada?.name ?? '';
+    _snapshot['equipo_multiparametro'] = _equipoMultiparametroSeleccionado ?? '';
+    _snapshot['turbidimetro'] = _turbidimetroSeleccionado ?? '';
+    _snapshot['equipo_nivel'] = _equipoNivelSeleccionado ?? '';
+    _snapshot['tipo_pozo'] = _selectedTipoPozo ?? '';
+    _snapshot['tipo_nivel'] = _tipoNivelSeleccionado ?? '';
+    _snapshot['equipo_caudal'] = _equiposCaudal.where((e) => e.id == _selectedEquipoCaudalId).firstOrNull?.codigo ?? '';
+    _snapshot['inspector'] = _inspectorSeleccionado ?? '';
+    _snapshot['muestreo_hidroquimico'] = _muestreoHidroquimico?.toString() ?? '';
+    _snapshot['muestreo_isotopico'] = _muestreoIsotopico?.toString() ?? '';
+
 
     // Capture dynamic params
     _paramControllers.forEach((key, controller) {
@@ -790,28 +895,43 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
   }
 
   Future<void> _logChange(String campo, String anterior, String nuevo) async {
-    if (anterior == nuevo) return;
-    if (_currentRegistroId == null) return;
+      // Normalización para comparación
+      final ant = (anterior ?? '').toString().trim();
+      final nvo = (nuevo ?? '').toString().trim();
+      if (ant == nvo) return;
+      
+    if (_currentRegistroId == null) {
+      debugPrint('⚠️ [TRAZA] No se puede registrar cambio: ID es nulo');
+      return;
+    }
+
+    debugPrint('🧪 [TRAZA] Guardando cambio en $campo: "$ant" -> "$nvo"');
 
     final userName = await AuthService().getUserName() ?? 'Usuario';
     final userId = await AuthService().getUserId() ?? 0;
     
     final auditoria = AuditoriaCambio(
-      monitoreoId: _currentRegistroId!,
+      registroId: _currentRegistroId!,
       usuarioId: userId,
-      nombreUsuario: userName,
-      campo: campo,
-      valorAnterior: anterior,
-      valorNuevo: nuevo,
-      contexto: '${_programaSeleccionado?.name ?? 'Sin Campaña'} - ${_estacionSeleccionada?.name ?? 'Sin Estación'}',
-      fechaCambio: DateTime.now(),
+      usuarioNombre: userName,
+      accion: 'update',
+      tabla: 'monitoreos',
+      modulo: 'app_collector',
+      registroRef: '${_programaSeleccionado?.name ?? 'S.C'} - ${_estacionSeleccionada?.name ?? 'S.E'}',
+      cambios: jsonEncode({
+        campo: {
+          "antes": anterior,
+          "despues": nuevo
+        }
+      }),
+      createdAt: DateTime.now(),
     );
 
     await _dbHelper.saveAuditoriaCambio(auditoria);
-    debugPrint('📝 [TRAZA] Cambio registrado: $campo ($anterior -> $nuevo)');
+    debugPrint('📝 [TRAZA] Cambio registrado: $campo ($ant -> $nvo)');
     
     // Update snapshot for this field
-    _snapshot[campo] = nuevo;
+    _snapshot[campo] = nvo;
   }
 
   void _showHistorialCambios() {
@@ -883,7 +1003,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       // Clear Nivel Freático fields when switching away from Aguas Subterráneas
       if (wasSubterranea && !isNowSubterranea) {
         _equipoNivelSeleccionado = null;
-        _tipoNivelPozoSeleccionado = null;
+        _selectedTipoPozo = null;
         _fechaYHoraNivel = null;
         _paramControllers['nivel']?.clear();
         _fotoNivelFreaticoPath = null;
@@ -1058,17 +1178,17 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       if ((_paramControllers['turbiedad']?.text ?? '').isEmpty) faltantes.add('Valor de Turbiedad');
       
       // Nivel Freático
-      if (_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false) {
+      if (_showNivelSection) {
         if (_equipoNivelSeleccionado == null) faltantes.add('Equipo Nivel Freático');
-        if (_tipoNivelPozoSeleccionado == null) faltantes.add('Tipo / Nivel Pozo');
+        if (_selectedTipoPozo == null) faltantes.add('Tipo / Nivel Pozo');
         if ((_paramControllers['nivel']?.text ?? '').isEmpty) faltantes.add('Nivel Freático');
         if (_fechaYHoraNivel == null) faltantes.add('Hora Medición - Nivel');
       }
 
       // Caudal
-      if (_matrizSeleccionada?.nombreMatriz == 'Aguas Superficiales') {
+      if (_showCaudalSection) {
         if (_selectedEquipoCaudalId == null) faltantes.add('Equipo Caudal (Molinete)');
-        if (_caudalController.text.isEmpty) faltantes.add('Nivel Caudal');
+        if (_caudalController.text.isEmpty) faltantes.add('Caudal');
         if (_fechaHoraCaudal == null) faltantes.add('Fecha/Hora - Caudal');
       }
 
@@ -1152,6 +1272,14 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
       }
 
       await _guardarInterno(isDraft: false);
+
+      // Actualizamos estado local para que la UI sepa que ya no es un borrador
+      // IMPORTANTE: Marcamos que ahora es un registro existente para que futuras 
+      // ediciones en esta misma sesión SÍ generen trazabilidad.
+      setState(() {
+        _wasDraft = false;
+        _wasOriginallyExistingRecord = true; 
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1399,7 +1527,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             ),
 
           // --- SECCIÓN 1.5: NIVEL FREÁTICO (Condicional) ---
-          if ((_matrizSeleccionada?.nombreMatriz.toLowerCase().contains('subterránea') ?? false) && !_isMonitoreoFallido)
+          if (_showNivelSection)
             _buildSectionTile(
               'Nivel Freático',
               isDarkMode,
@@ -1410,18 +1538,65 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   hintText: 'Seleccione equipo de nivel',
                   searchHintText: 'Buscar equipo...',
                   selectedValue: _equipoNivelSeleccionado,
-                  options: _equiposMultiOptions,
+                  options: _equiposNivelOptions,
                   isDarkMode: isDarkMode,
-                  onChanged: (val) => setState(() => _equipoNivelSeleccionado = val),
+                  onChanged: (val) {
+                    setState(() => _equipoNivelSeleccionado = val);
+                    _onFieldChanged();
+                  },
                 )),
+                IgnorePointer(
+                  ignoring: widget.isReadOnly,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _selectedTipoPozo != null ? Icons.check_circle : Icons.cancel,
+                          color: _selectedTipoPozo != null
+                              ? Colors.greenAccent
+                              : (isDarkMode ? Colors.grey.shade700 : Colors.grey.shade400),
+                          size: 24,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedTipoPozo,
+                            decoration: InputDecoration(
+                              labelText: 'Tipo de Pozo',
+                              labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            items: _opcionesTipoPozo.map((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value, style: const TextStyle(fontSize: 14)),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              setState(() {
+                                _selectedTipoPozo = newValue;
+                              });
+                              _onFieldChanged();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
-                  label: 'Tipo / Nivel Pozo',
-                  hintText: 'Seleccione tipo de pozo',
+                  label: 'Tipo de Nivel',
+                  hintText: 'Seleccione tipo de nivel',
                   searchHintText: 'Buscar tipo...',
-                  selectedValue: _tipoNivelPozoSeleccionado,
-                  options: const ['Pozo Monitoreo', 'Pozo Producción', 'Cisterna', 'Otro'],
+                  selectedValue: _tipoNivelSeleccionado,
+                  options: const ['Dinámico', 'Estático'],
                   isDarkMode: isDarkMode,
-                  onChanged: (val) => setState(() => _tipoNivelPozoSeleccionado = val),
+                  onChanged: (val) {
+                    setState(() => _tipoNivelSeleccionado = val);
+                    _onFieldChanged();
+                  },
                 )),
                 IgnorePointer(ignoring: widget.isReadOnly, child: CustomParametroInputRow(
                   isReadOnly: widget.isReadOnly,
@@ -1484,8 +1659,8 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
               leadingIcon: Icons.water_drop,
             ),
 
-          // --- SECCIÓN 1.6: CAUDAL (Condicional: solo Aguas Superficiales) ---
-          if ((_matrizSeleccionada?.nombreMatriz == 'Aguas Superficiales') && !_isMonitoreoFallido)
+          // --- SECCIÓN 1.6: CAUDAL (Condicional) ---
+          if (_showCaudalSection)
             _buildSectionTile(
               'Caudal',
               isDarkMode,
@@ -1509,7 +1684,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                     },
                   ),
                 ),
-                // Nivel Caudal [L/s]
+                // Caudal [L/s]
                 IgnorePointer(
                   ignoring: widget.isReadOnly,
                   child: Padding(
@@ -1537,7 +1712,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                             },
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
-                              labelText: 'Nivel Caudal [$_unitCaudal]',
+                              labelText: 'Caudal [$_unitCaudal]',
                               hintText: 'Ingrese caudal',
                               labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
                               hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
@@ -1564,7 +1739,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 IgnorePointer(
                   ignoring: widget.isReadOnly,
                   child: CustomFormRow(
-                    label: 'Fecha/Hora - Caudal',
+                    label: 'Fecha/Hora Medición - Caudal',
                     value: _fechaHoraCaudal == null
                         ? 'Seleccione Fecha y Hora'
                         : _formatearFechaYHora(_fechaHoraCaudal!),
@@ -1837,7 +2012,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                   selectedValue: _turbidimetroSeleccionado,
                   options: _turbidimetrosOptions,
                   isDarkMode: isDarkMode,
-                  onChanged: (val) => setState(() => _turbidimetroSeleccionado = val),
+                  onChanged: (val) {
+                    setState(() => _turbidimetroSeleccionado = val);
+                    _onFieldChanged();
+                  },
                 )),
                 if (_turbidimetroSeleccionado != null) ...[
                   // Dynamic: For Turbiedad section, we use the loop (Dynamic logic as per user orientation)
@@ -1877,6 +2055,36 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             
             // --- SECCIÓN 4: MUESTREO ---
             _buildSectionTile('Muestreo', isDarkMode, _isMuestreoComplete, [
+              IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
+                label: 'Hora y Fecha de Muestreo', 
+                value: _fechaYHoraMuestreo == null ? 'Seleccione Hora y Fecha' : _formatearFechaYHora(_fechaYHoraMuestreo!), 
+                isValid: _fechaYHoraMuestreo != null, 
+                showArrow: false,
+                isDarkMode: isDarkMode,
+                onTap: _seleccionarFechaYHora, 
+              )),
+              if (_activeParameterKeys.contains('profundidad') && 
+                  _matrizSeleccionada?.nombreMatriz != 'Aguas Superficiales' && 
+                  !_isMonitoreoFallido)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: CustomParametroInputRow(
+                    isReadOnly: widget.isReadOnly,
+                    label: 'Profundidad de muestreo [$_unitProfundidad]', 
+                    hintText: 'Ingrese profundidad', 
+                    isDarkMode: isDarkMode, 
+                    controller: _paramControllers['profundidad']!,
+                    parameterKey: 'profundidad',
+                    selectedEstacion: _estacionSeleccionada?.name ?? '',
+                    showLeadingIcon: true,
+                    showPulseIcon: false,
+                    isMandatory: true,
+                    hasHistory: _hasHistory,
+                    minAllowed: _parameterRanges['profundidad']?['min'],
+                    maxAllowed: _parameterRanges['profundidad']?['max'],
+                    bypassValidation: true, 
+                  ),
+                ),
               IgnorePointer(ignoring: widget.isReadOnly, child: SearchableDropdown(
                 label: 'Método de Muestreo',
                 hintText: 'Seleccione método de muestreo',
@@ -1886,6 +2094,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 isDarkMode: isDarkMode,
                 onChanged: (val) {
                   setState(() => _metodoSeleccionado = _metodos.firstWhere((m) => m.metodo == val));
+                  _onFieldChanged();
                 },
               )),
               IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
@@ -1895,7 +2104,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 isDarkMode: isDarkMode,
                 onTap: () async {
                   final result = await _mostrarDialogoSiNo('Muestreo Hidroquímico', _muestreoHidroquimico);
-                  if (mounted && result != null) setState(() => _muestreoHidroquimico = result);
+                  if (mounted && result != null) {
+                    setState(() => _muestreoHidroquimico = result);
+                    _onFieldChanged();
+                  }
                 }
               )),
               IgnorePointer(ignoring: widget.isReadOnly, child: CustomFormRow(
@@ -1905,7 +2117,10 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                 isDarkMode: isDarkMode,
                 onTap: () async {
                   final result = await _mostrarDialogoSiNo('Muestreo Isotópico', _muestreoIsotopico);
-                  if (mounted && result != null) setState(() => _muestreoIsotopico = result);
+                  if (mounted && result != null) {
+                    setState(() => _muestreoIsotopico = result);
+                    _onFieldChanged();
+                  }
                 }
               )),
               // REACTIVE Código Laboratorio
@@ -1930,7 +2145,7 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
                             maxLines: 1,
                             style: TextStyle(color: isDarkMode ? Colors.white : Colors.black),
                             decoration: InputDecoration(
-                              labelText: 'Código Laboratorio',
+                              labelText: 'Código Laboratorio Hidroquímico',
                               hintText: 'Ingrese código de laboratorio',
                               labelStyle: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
                               hintStyle: TextStyle(color: isDarkMode ? Colors.grey[400] : Colors.grey[600], fontSize: 14),
@@ -2144,42 +2359,6 @@ class _RegistrarMonitoreoScreenState extends State<RegistrarMonitoreoScreen> {
             isDarkMode: isDarkMode,
             onChanged: _onMatrizChanged,
           ),
-          
-          CustomFormRow(
-            label: 'Hora y Fecha de Muestreo', 
-            value: _fechaYHoraMuestreo == null ? 'Seleccione Hora y Fecha' : _formatearFechaYHora(_fechaYHoraMuestreo!), 
-            isValid: _fechaYHoraMuestreo != null, 
-            showArrow: false,
-            isDarkMode: isDarkMode,
-            onTap: _seleccionarFechaYHora, 
-          ),
-
-
-          
-          if (_activeParameterKeys.contains('profundidad') && 
-              _matrizSeleccionada?.nombreMatriz != 'Aguas Superficiales' && 
-              !_isMonitoreoFallido)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: CustomParametroInputRow(
-                isReadOnly: widget.isReadOnly,
-                label: 'Profundidad de muestreo [$_unitProfundidad]', 
-                hintText: 'Ingrese profundidad', 
-                isDarkMode: isDarkMode, 
-                controller: _paramControllers['profundidad']!,
-                parameterKey: 'profundidad',
-                selectedEstacion: _estacionSeleccionada?.name ?? '',
-                showLeadingIcon: true,
-                showPulseIcon: false,
-                isMandatory: true,
-                hasHistory: _hasHistory,
-                minAllowed: _parameterRanges['profundidad']?['min'],
-                maxAllowed: _parameterRanges['profundidad']?['max'],
-                bypassValidation: true, 
-              ),
-            ),
-          
-          // DYNAMIC: Removing previous loop from Section 1 (Fixed/Quemado logic)
           
           CustomFormRow(
             label: 'Monitoreo Fallido',

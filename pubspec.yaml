@@ -1,7 +1,7 @@
 name: monitoreo_app
 description: Flutter monitoring application
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.6.11+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -18,6 +18,7 @@ dependencies:
   signature: ^5.5.0
   screenshot: ^3.0.0
   share_plus: ^9.0.0
+  package_info_plus: ^8.0.0
   cupertino_icons: 1.0.8
   provider: 6.1.2
   shared_preferences: ^2.5.4
@@ -49,3 +50,4 @@ flutter:
   assets:
     - .env
     - assets/gp-blanco-centrado.png
+    - assets/gp_logo_icon.png

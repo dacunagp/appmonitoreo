@@ -4,6 +4,8 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../widgets/app_drawer.dart';
 import '../utils/security_utils.dart';
+import '../services/auth_service.dart';
+import 'package:intl/intl.dart';
 
 class AdministracionScreen extends StatefulWidget {
   final int initialIndex;
@@ -32,6 +34,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   List<CorreoEnviado> _historialCorreos = [];
   String _searchQuery = '';
   int? _selectedProgramaFilter;
+  String _currentUserName = '';
 
   // Fase 109: Reserved Keys for Internal Use (Fixed Columns in Monitoreos Table)
   static const List<String> _reservedKeys = [
@@ -42,6 +45,7 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   @override
   void initState() {
     super.initState();
+    _loadUserName();
     _tabController = TabController(length: 7, vsync: this, initialIndex: widget.initialIndex);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
@@ -76,6 +80,13 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserName() async {
+    final userName = await AuthService().getUserName();
+    if (mounted && userName != null) {
+      setState(() => _currentUserName = userName);
+    }
   }
 
   Future<void> _loadAllData() async {
@@ -850,6 +861,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
              item.asunto.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
 
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     return Column(
       children: [
         Padding(
@@ -894,56 +907,122 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
             itemCount: filtered.length,
             itemBuilder: (context, index) {
               final item = filtered[index];
-              final dateStr = '${item.fechaEnvio.day}/${item.fechaEnvio.month} ${item.fechaEnvio.hour}:${item.fechaEnvio.minute.toString().padLeft(2, '0')}';
               final bool isError = item.estado == 'Error';
 
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: isError ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1),
-                  child: Icon(
-                    isError ? Icons.error_outline : Icons.check_circle_outline,
-                    color: isError ? Colors.red : Colors.green,
-                  ),
-                ),
-                title: Text(item.destinatario, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('${item.asunto}\n$dateStr', style: const TextStyle(fontSize: 12)),
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: () async {
-                    if (item.id != null) {
-                      await _dbHelper.deleteCorreoHistorial(item.id!);
-                      _loadAllData();
-                    }
-                  },
-                ),
-                isThreeLine: true,
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Detalle del Envío'),
-                      content: SingleChildScrollView(
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.asunto.isEmpty ? 'Sin Asunto' : item.asunto,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blueAccent,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.access_time, size: 12, color: Colors.grey[600]),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      DateFormat('dd/MM/yy HH:mm').format(item.fechaEnvio),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isError) ...[
+                                const SizedBox(width: 4),
+                                const Icon(Icons.error_outline, size: 18, color: Colors.red),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Correo: ${item.destinatario}',
+                            style: TextStyle(
+                              fontSize: 11, 
+                              color: Colors.grey[500], 
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: isError 
+                            ? Colors.red.withOpacity(isDarkMode ? 0.2 : 0.05)
+                            : Colors.green.withOpacity(isDarkMode ? 0.2 : 0.05),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _detailRow('Para:', item.destinatario),
-                            _detailRow('Asunto:', item.asunto),
-                            _detailRow('Fecha:', '${item.fechaEnvio.day.toString().padLeft(2, '0')}/${item.fechaEnvio.month.toString().padLeft(2, '0')}/${item.fechaEnvio.year} ${item.fechaEnvio.hour.toString().padLeft(2, '0')}:${item.fechaEnvio.minute.toString().padLeft(2, '0')}'),
-                            _detailRow('Estado:', item.estado),
-                            if (isError) _detailRow('Error:', item.errorMensaje ?? 'Desconocido'),
-                            const Divider(),
-                            const Text('Contenido:', style: TextStyle(fontWeight: FontWeight.bold)),
-                            const SizedBox(height: 5),
-                            Text(item.cuerpo),
+                            Text(isError ? 'Error' : 'Mensaje', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                            const SizedBox(height: 4),
+                            Text(
+                              isError ? (item.errorMensaje ?? 'Error desconocido') : (item.cuerpo.isEmpty ? '[Sin Mensaje]' : item.cuerpo),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            ),
                           ],
                         ),
                       ),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('CERRAR')),
-                      ],
-                    ),
-                  );
-                },
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.person, size: 16, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Text(_currentUserName.isEmpty ? 'Usuario' : _currentUserName, 
+                                style: const TextStyle(fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.grey),
+                            onPressed: () async {
+                              if (item.id != null) {
+                                await _dbHelper.deleteCorreoHistorial(item.id!);
+                                _loadAllData();
+                              }
+                            },
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          )
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               );
             },
           ),

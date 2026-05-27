@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -102,7 +103,7 @@ class DatabaseHelper {
     await _log('✨ [INIT] Abriendo base de datos SQLite en: $path');
     Database db = await openDatabase(
       path,
-      version: 21, // 🚀 BUMP A VERSIÓN 21 (HISTORIAL DE CORREOS)
+      version: 30, // 🚀 BUMP A VERSIÓN 30 PARA AGREGAR id_unica A MONITOREOS
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -154,6 +155,41 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE] Error creando tabla notificaciones: $e');
       }
     }
+
+    if (oldVersion < 22) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando endpoint enviar-correo...');
+        var res = await db.rawQuery("SELECT id FROM endpoints WHERE nombre = ?", ['enviar-correo']);
+        if (res.isEmpty) {
+          await db.insert('endpoints', {'nombre': 'enviar-correo'});
+          await _log('✅ [UPGRADE] Endpoint enviar-correo agregado.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando enviar-correo: $e');
+      }
+    }
+    
+    if (oldVersion < 23) {
+      try {
+        await _log('🚀 [UPGRADE] Agregando columna tipo_nivel a monitoreos...');
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN tipo_nivel TEXT;");
+        await _log('✅ [UPGRADE] Columna tipo_nivel agregada.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE] Error agregando tipo_nivel: $e');
+      }
+    }
+
+    // 🔥 PARCHE VERSIÓN 24 PARA LOS QUE SE SALTARON LA CREACIÓN
+    if (oldVersion < 24) {
+      try {
+        await _log('🚀 [UPGRADE v24] Forzando creación de tipo_nivel por si faltaba...');
+        await db.execute("ALTER TABLE monitoreos ADD COLUMN tipo_nivel TEXT;");
+        await _log('✅ [UPGRADE v24] Columna tipo_nivel asegurada.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v24] (La columna ya existía o hubo otro error): $e');
+      }
+    }
+
     if (oldVersion < 9) {
       try {
         await _log('🚀 [UPGRADE] Agregando endpoint por defecto "muestras"...');
@@ -352,6 +388,114 @@ class DatabaseHelper {
         await _log('⚠️ [UPGRADE v21] Error en tabla de correos: $e');
       }
     }
+
+    if (oldVersion < 25) {
+      try {
+        await _log('🚀 [UPGRADE v25] Verificando columna tipo_nivel...');
+        var tableInfo = await db.rawQuery("PRAGMA table_info(monitoreos)");
+        bool hasTipoNivel = tableInfo.any((column) => column['name'] == 'tipo_nivel');
+        bool hasFechaMuestreo = tableInfo.any((column) => column['name'] == 'fecha_hora_muestreo');
+        
+        if (!hasTipoNivel) {
+          await db.execute("ALTER TABLE monitoreos ADD COLUMN tipo_nivel TEXT;");
+          await _log('✅ [UPGRADE v25] Columna tipo_nivel agregada exitosamente.');
+        } else {
+          await _log('ℹ️ [UPGRADE v25] La columna tipo_nivel ya existía.');
+        }
+
+        if (!hasFechaMuestreo) {
+          await db.execute("ALTER TABLE monitoreos ADD COLUMN fecha_hora_muestreo TEXT;");
+          await _log('✅ [UPGRADE v25] Columna fecha_hora_muestreo agregada exitosamente.');
+        } else {
+          await _log('ℹ️ [UPGRADE v25] La columna fecha_hora_muestreo ya existía.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v25] Error asegurando tipo_nivel: $e');
+      }
+    }
+
+    if (oldVersion < 26) {
+      try {
+        await _log('🚀 [UPGRADE v26] Remodelando trazabilidad_cambios a json_logs...');
+        await db.execute("DROP TABLE IF EXISTS trazabilidad_cambios");
+        await db.execute('''
+          CREATE TABLE trazabilidad_cambios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER,
+            usuario_nombre TEXT,
+            accion TEXT,
+            tabla TEXT,
+            modulo TEXT,
+            registro_id INTEGER,
+            registro_ref TEXT,
+            cambios TEXT,
+            ip_address TEXT,
+            created_at DATETIME
+          )
+        ''');
+        await _log('✅ [UPGRADE v26] Tabla trazabilidad_cambios reconstruida a nuevo esquema JSON.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v26] Error en remodelación de trazabilidad: $e');
+      }
+    }
+
+    if (oldVersion < 27) {
+      try {
+        await _log('🚀 [UPGRADE v27] Agregando columna is_synced a trazabilidad_cambios...');
+        await db.execute("ALTER TABLE trazabilidad_cambios ADD COLUMN is_synced INTEGER DEFAULT 0;");
+        await _log('✅ [UPGRADE v27] Columna is_synced agregada.');
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v27] Error agregando is_synced: $e');
+      }
+    }
+
+    if (oldVersion < 28) {
+      try {
+        await _log('🚀 [UPGRADE v28] Verificando columna is_synced en trazabilidad_cambios...');
+        final tableInfo = await db.rawQuery("PRAGMA table_info(trazabilidad_cambios)");
+        final hasIsSynced = tableInfo.any((col) => col['name'] == 'is_synced');
+        if (!hasIsSynced) {
+          await db.execute("ALTER TABLE trazabilidad_cambios ADD COLUMN is_synced INTEGER DEFAULT 0;");
+          await _log('✅ [UPGRADE v28] Columna is_synced faltante fue agregada.');
+        } else {
+          await _log('ℹ️ [UPGRADE v28] Columna is_synced ya existía. OK.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v28] Error verificando is_synced: $e');
+      }
+    }
+
+    if (oldVersion < 29) {
+      try {
+        await _log('🚀 [UPGRADE v29] Agregando columna id_unica a trazabilidad_cambios...');
+        final tableInfo = await db.rawQuery("PRAGMA table_info(trazabilidad_cambios)");
+        final hasIdUnica = tableInfo.any((col) => col['name'] == 'id_unica');
+        if (!hasIdUnica) {
+          await db.execute("ALTER TABLE trazabilidad_cambios ADD COLUMN id_unica TEXT;");
+          await _log('✅ [UPGRADE v29] Columna id_unica agregada.');
+        } else {
+          await _log('ℹ️ [UPGRADE v29] Columna id_unica ya existía. OK.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v29] Error agregando id_unica: $e');
+      }
+    }
+
+    if (oldVersion < 30) {
+      try {
+        await _log('🚀 [UPGRADE v30] Agregando columna id_unica a monitoreos...');
+        final tableInfo = await db.rawQuery("PRAGMA table_info(monitoreos)");
+        final hasIdUnica = tableInfo.any((col) => col['name'] == 'id_unica');
+        if (!hasIdUnica) {
+          await db.execute("ALTER TABLE monitoreos ADD COLUMN id_unica TEXT;");
+          await _log('✅ [UPGRADE v30] Columna id_unica agregada a monitoreos.');
+        } else {
+          await _log('ℹ️ [UPGRADE v30] Columna id_unica ya existía en monitoreos. OK.');
+        }
+      } catch (e) {
+        await _log('⚠️ [UPGRADE v30] Error agregando id_unica a monitoreos: $e');
+      }
+    }
   }
 
   Future<void> _ensureApiTablesExist(Database db) async {
@@ -439,7 +583,7 @@ class DatabaseHelper {
   Future _createDB(Database db, int version) async {
     await _log('🏗️ [SCHEMA] Construyendo tablas de la base de datos...');
     
-    // 1. Long Format & Drafts (MÁS LAS 7 COLUMNAS FLATTENED Y LAT/LONG)
+    // 1. Long Format & Drafts (MÁS LAS 7 COLUMNAS FLATTENED Y LAT/LONG Y TIPO_NIVEL)
     await db.execute('''
       CREATE TABLE monitoreos (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -461,6 +605,7 @@ class DatabaseHelper {
         foto_turbiedad TEXT,
         equipo_nivel_id INTEGER,
         tipo_pozo TEXT,
+        tipo_nivel TEXT, 
         fecha_hora_nivel TEXT,
         latitud REAL,
         longitud REAL,
@@ -481,7 +626,8 @@ class DatabaseHelper {
         foto_caudal TEXT,
         foto_nivel_freatico TEXT,
         foto_muestreo TEXT,
-        firma_path TEXT
+        firma_path TEXT,
+        id_unica TEXT
       )
     ''');
     
@@ -585,6 +731,38 @@ class DatabaseHelper {
       CREATE TABLE observaciones_predefinidas (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         texto TEXT NOT NULL
+      )
+    ''');
+
+    // 9. Tabla de Trazabilidad (Asegurarla en instalaciones nuevas)
+    await db.execute('''
+      CREATE TABLE trazabilidad_cambios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario_id INTEGER,
+        usuario_nombre TEXT,
+        accion TEXT,
+        tabla TEXT,
+        modulo TEXT,
+        registro_id INTEGER,
+        registro_ref TEXT,
+        cambios TEXT,
+        ip_address TEXT,
+        is_synced INTEGER DEFAULT 0,
+        id_unica TEXT,
+        created_at DATETIME
+      )
+    ''');
+
+    // 10. Tabla de Historial de Correos (Asegurarla en instalaciones nuevas)
+    await db.execute('''
+      CREATE TABLE historial_correos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        destinatario TEXT,
+        asunto TEXT,
+        cuerpo TEXT,
+        fecha_envio TEXT,
+        estado TEXT,
+        error_mensaje TEXT
       )
     ''');
 
@@ -967,10 +1145,121 @@ class DatabaseHelper {
     return await db.update('monitoreos', data, where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Actualiza un monitoreo y registra automáticamente los cambios en la tabla de trazabilidad
+  Future<int> updateMonitoreoConAuditoria({
+    required Map<String, dynamic> nuevoMonitoreo,
+    required String nombreUsuario,
+    required String contexto, // Ej: "Punto BRW_01" o "Formulario de Aguas"
+  }) async {
+    final db = await database;
+    final int monitoreoId = nuevoMonitoreo['id']; // Asegúrate de que el map traiga el ID
+
+    // 1. Obtener el registro viejo ANTES de que sea modificado
+    final List<Map<String, dynamic>> resultadoViejo = await db.query(
+      'monitoreos', 
+      where: 'id = ?',
+      whereArgs: [monitoreoId],
+    );
+
+    if (resultadoViejo.isEmpty) {
+      return 0;
+    }
+
+    final Map<String, dynamic> viejoMonitoreo = resultadoViejo.first;
+
+    // 2. Comparar campo por campo y acumular cambios
+    Map<String, dynamic> cambiosMap = {};
+    
+    for (String columna in nuevoMonitoreo.keys) {
+      if (columna == 'id' || columna == 'fecha_creacion' || columna == 'sync_status' || columna == 'is_draft') {
+        continue;
+      }
+
+      final String valorAnterior = viejoMonitoreo[columna]?.toString() ?? '';
+      final String valorNuevo = nuevoMonitoreo[columna]?.toString() ?? '';
+
+      if (valorAnterior != valorNuevo) {
+        cambiosMap[columna] = {
+          "antes": valorAnterior,
+          "despues": valorNuevo
+        };
+        debugPrint('AUDITORÍA: Cambio detectado en $columna ($valorAnterior -> $valorNuevo)');
+      }
+    }
+
+    // 3. Si hay cambios, guardamos la evidencia en trazabilidad siguiendo el nuevo esquema
+    if (cambiosMap.isNotEmpty) {
+      await db.insert('trazabilidad_cambios', {
+        'registro_id': monitoreoId,
+        'usuario_nombre': nombreUsuario,
+        'usuario_id': viejoMonitoreo['usuario_id'] ?? 0,
+        'accion': 'update',
+        'tabla': 'monitoreos',
+        'modulo': 'app_collector',
+        'registro_ref': contexto,
+        'cambios': jsonEncode(cambiosMap),
+        'created_at': DateTime.now().toIso8601String(),
+        'is_synced': 0,
+      });
+    }
+
+    // 🛡️ [DEFENSE] Check if record is already synced (misma protección de updateRegistroMonitoreo)
+    if (viejoMonitoreo['is_draft'] == 2 || viejoMonitoreo['sync_status'] == 'success') {
+      await _log('🛡️ [DEFENSE] Bloqueo de actualización con auditoría: El registro $monitoreoId ya fue sincronizado.');
+      return 0; // Reject update
+    }
+
+    // 4. Finalmente, actualizamos el registro real en la base de datos
+    return await db.update(
+      'monitoreos',
+      nuevoMonitoreo,
+      where: 'id = ?',
+      whereArgs: [monitoreoId],
+    );
+  }
+
   Future<int> deleteRegistroMonitoreo(int id) async {
     final db = await database;
     return await db.delete('monitoreos', where: 'id = ?', whereArgs: [id]);
   }
+
+  /// Elimina un monitoreo y registra la acción en la tabla de trazabilidad
+  Future<int> deleteRegistroMonitoreoConAuditoria({
+    required int id,
+    required String nombreUsuario,
+    required int usuarioId,
+    required String contexto,
+  }) async {
+    final db = await database;
+
+    // 0. Intentamos obtener el ID único del monitoreo si ya fue sincronizado
+    String? idUnica;
+    try {
+      final res = await db.query('monitoreos', columns: ['id_unica'], where: 'id = ?', whereArgs: [id]);
+      if (res.isNotEmpty) {
+        idUnica = res.first['id_unica'] as String?;
+      }
+    } catch (_) {}
+
+    // 1. Insertamos el log de eliminación en trazabilidad
+    await db.insert('trazabilidad_cambios', {
+      'registro_id': id,
+      'usuario_id': usuarioId,
+      'usuario_nombre': nombreUsuario,
+      'accion': 'delete',
+      'tabla': 'monitoreos',
+      'modulo': 'app_collector',
+      'registro_ref': contexto,
+      'cambios': jsonEncode({'registro': 'eliminado'}),
+      'is_synced': 0, // Mark as pending to sync with web
+      'id_unica': idUnica, // Asociamos el ID Único (ej: 2026_GP...) si existe
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    // 2. Ejecutamos la eliminación real
+    return await db.delete('monitoreos', where: 'id = ?', whereArgs: [id]);
+  }
+
 
   Future<int> deleteAllRegistrosMonitoreo() async {
     final db = await database;
@@ -1679,9 +1968,9 @@ class DatabaseHelper {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'trazabilidad_cambios',
-      where: 'monitoreo_id = ?',
+      where: 'registro_id = ?',
       whereArgs: [monitoreoId],
-      orderBy: 'fecha_cambio DESC',
+      orderBy: 'created_at DESC',
     );
     return maps.map((m) => AuditoriaCambio.fromMap(m)).toList();
   }
@@ -1690,7 +1979,7 @@ class DatabaseHelper {
     final db = await database;
     return await db.delete(
       'trazabilidad_cambios',
-      where: 'monitoreo_id = ?',
+      where: 'registro_id = ?',
       whereArgs: [monitoreoId],
     );
   }
@@ -1699,6 +1988,75 @@ class DatabaseHelper {
     final db = await database;
     return await db.delete('trazabilidad_cambios');
   }
+
+  /// Retorna todos los registros de trazabilidad que aún no han sido enviados al servidor.
+  Future<List<Map<String, dynamic>>> getAuditoriaPendiente() async {
+    final db = await database;
+    return await db.query(
+      'trazabilidad_cambios',
+      where: 'is_synced = 0',
+      orderBy: 'created_at ASC',
+    );
+  }
+
+  /// Marca los registros con los IDs dados como sincronizados y guarda el id_unica del servidor.
+  /// [idsMap] es un mapa de {localId: idUnicaServidor}
+  Future<void> marcarAuditoriaComoSincronizada(
+    List<int> ids, {
+    Map<int, String>? idsMap,
+  }) async {
+    if (ids.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final localId in ids) {
+        final idUnica = idsMap?[localId];
+        await txn.update(
+          'trazabilidad_cambios',
+          {
+            'is_synced': 1,
+            if (idUnica != null) 'id_unica': idUnica,
+          },
+          where: 'id = ?',
+          whereArgs: [localId],
+        );
+      }
+    });
+  }
+
+  /// Actualiza el registro_id de las trazas cuando un monitoreo local recibe su ID final del servidor.
+  /// También permite propagar el id_unica (código formateado) a todos los logs asociados.
+  Future<void> updateAuditoriaRegistroId(int oldId, int newId, {String? idUnica}) async {
+    final db = await database;
+    await db.update(
+      'trazabilidad_cambios',
+      {
+        'registro_id': newId,
+        'is_synced': 1,
+        if (idUnica != null) 'id_unica': idUnica,
+      },
+      where: 'registro_id = ?',
+      whereArgs: [oldId],
+    );
+    debugPrint('📝 [TRAZABILIDAD] IDs y estado Sincronizado (1) actualizados para registro local $oldId -> $newId ($idUnica)');
+  }
+
+  /// Regulariza logs de trazabilidad de monitoreos que ya fueron enviados pero seguían como pendientes
+  Future<void> syncAuditoriaWithMonitoreoSincronizado() async {
+    final db = await database;
+    // Buscamos monitoreos que ya están como enviados (is_draft = 2) y marcamos su trazabilidad como enviada
+    await db.execute('''
+      UPDATE trazabilidad_cambios 
+      SET is_synced = 1 
+      WHERE is_synced = 0 
+      AND (
+        registro_id IN (SELECT id FROM monitoreos WHERE is_draft = 2)
+        OR 
+        registro_id IN (SELECT id_unica FROM monitoreos WHERE is_draft = 2 AND id_unica IS NOT NULL)
+      )
+    ''');
+    debugPrint('🔄 [TRAZABILIDAD] Sincronización de estados completada.');
+  }
+
 
   // --- MÉTODOS PARA HISTORIAL DE CORREOS (v21) ---
 

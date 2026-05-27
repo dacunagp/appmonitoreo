@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
@@ -22,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   bool _isLoading = false;
   bool _isSyncing = false;
   bool _obscurePassword = true;
+  String _appVersion = '1.6.10'; // Fallback default version
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -38,6 +40,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       curve: Curves.easeIn,
     );
     _animationController.forward();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = packageInfo.version;
+        });
+      }
+    } catch (e) {
+      // Keep fallback version
+    }
   }
 
   @override
@@ -116,8 +132,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDarkMode 
-              ? [const Color(0xFF1A237E), const Color(0xFF121212)]
-              : [AppTheme.lightPrimary.withOpacity(0.8), Colors.white],
+              ? [
+                  const Color(0xFF1B5E20).withOpacity(0.4),
+                  const Color(0xFF0D47A1).withOpacity(0.4),
+                  const Color(0xFF121212),
+                ]
+              : [
+                  const Color(0xFF2EAF5F).withOpacity(0.8),
+                  const Color(0xFF0084CA).withOpacity(0.8),
+                  Colors.white,
+                ],
+            stops: isDarkMode ? null : const [0.0, 0.5, 1.0],
           ),
         ),
         child: Center(
@@ -145,8 +170,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.all(20),
-                      child: Image.asset('assets/gp-blanco-centrado.png', errorBuilder: (c, e, s) => const Icon(Icons.water_drop, size: 60, color: Colors.blue)),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/gp_logo_icon.png',
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => const Icon(Icons.water_drop, size: 60, color: Colors.blue),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -154,14 +184,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     'Iniciar Sesión',
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: isDarkMode ? Colors.white : AppTheme.lightTextPrimary,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Ingresa tus credenciales para continuar',
                     style: theme.textTheme.bodyMedium?.copyWith(
-                      color: isDarkMode ? Colors.white70 : AppTheme.lightTextSecondary,
+                      color: Colors.white70,
                     ),
                   ),
                   const SizedBox(height: 48),
@@ -220,18 +250,25 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                     icon: _isSyncing 
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.sync),
-                    label: Text(_isSyncing ? 'SINCRONIZANDO...' : 'SINCRONIZAR USUARIOS'),
+                    label: Text(
+                      _isSyncing ? 'SINCRONIZANDO...' : 'SINCRONIZAR USUARIOS',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: isDarkMode ? Colors.white30 : AppTheme.lightPrimary),
-                      foregroundColor: isDarkMode ? Colors.white : AppTheme.lightPrimary,
+                      backgroundColor: isDarkMode ? Colors.white.withOpacity(0.05) : Colors.white,
+                      side: BorderSide(color: isDarkMode ? Colors.white30 : const Color(0xFF0084CA)),
+                      foregroundColor: isDarkMode ? Colors.white : const Color(0xFF0084CA),
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      elevation: isDarkMode ? 0 : 2,
                     ),
                   ),
                   
                   const SizedBox(height: 40),
                   Text(
-                    'v1.6.1 - GP Consultores',
-                    style: theme.textTheme.labelSmall?.copyWith(color: isDarkMode ? Colors.white54 : Colors.grey),
+                    'v$_appVersion - GP Consultores',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: isDarkMode ? Colors.white54 : Colors.black54,
+                    ),
                   ),
                 ],
               ),

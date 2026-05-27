@@ -1,16 +1,26 @@
 @echo off
+:: Intentamos detectar la ultima version subida localmente
+set "last_version=Desconocida"
+for /f "tokens=2 delims=_" %%a in ('dir /b /o-d build\app\outputs\flutter-apk\GPCollector_*.apk 2^>nul') do (
+    set "last_version=%%~na"
+    goto :found
+)
+:found
+
 echo =========================================
 echo   Asistente de Despliegue GPCollector
 echo =========================================
 echo.
+echo [!] Ultima version detectada: %last_version%
+echo.
 
 :: Preguntamos los datos de la version
-set /p version="1. Que version vas a subir? (ej. v1.5.2): "
-set /p notes="2. Que cambios hiciste? (ej. Se corrigio el modo claro): "
+set /p version="1. ¿Que version vas a subir?: "
+set /p notes="2. ¿Que cambios hiciste? (ej. Se corrigio el modo claro): "
 
 echo.
 echo [1/4] Compilando la %version% en Flutter...
-call flutter build apk
+call flutter build apk --build-name=%version%
 
 echo.
 echo [2/4] Renombrando el archivo a GPCollector_%version%.apk...

@@ -342,6 +342,7 @@ class Monitoreo {
   final String? fotoNivelFreatico;
   final String? fotoMuestreo;
   final String? firmaPath;
+  final String? tipoNivel; // Phase 180
   final int isDraft;
   final String? syncStatus;
   final String? detallesJson;
@@ -388,6 +389,7 @@ class Monitoreo {
     this.detallesJson,
     this.multiparametrosJson,
     this.firmaPath,
+    this.tipoNivel, // Phase 180
   });
 
   factory Monitoreo.fromMap(Map<String, dynamic> map) {
@@ -432,6 +434,7 @@ class Monitoreo {
       detallesJson: map['detalles_json'],
       multiparametrosJson: map['multiparametros_json'],
       firmaPath: map['firma_path'],
+      tipoNivel: map['tipo_nivel'], // Phase 180
     );
   }
 
@@ -477,6 +480,7 @@ class Monitoreo {
       'detalles_json': detallesJson,
       'multiparametros_json': multiparametrosJson,
       'firma_path': firmaPath,
+      'tipo_nivel': tipoNivel, // Phase 180
     };
   }
 
@@ -494,6 +498,7 @@ class Monitoreo {
       "programa_id": programaId,
       "estacion_id": estacionId,
       "fecha_hora": fechaHora?.replaceAll('T', ' ').split('.').first,
+      "fecha_hora_muestreo": fechaHora?.replaceAll('T', ' ').split('.').first,
       "monitoreo_fallido": monitoreoFallido,
       "observacion": observacion,
       "matriz_id": matrizId,
@@ -507,6 +512,7 @@ class Monitoreo {
       "is_draft": 0,
       "equipo_nivel_id": equipoNivelId,
       "tipo_pozo": tipoPozo,
+      "tipo_nivel": tipoNivel, // Phase 180
       "fecha_hora_nivel": fechaHoraNivel?.replaceAll('T', ' ').split('.').first,
       "temperatura": temperatura,
       "ph": ph,
@@ -559,52 +565,70 @@ class Monitoreo {
 
 class AuditoriaCambio {
   final int? id;
-  final int monitoreoId;
   final int usuarioId;
-  final String nombreUsuario;
-  final String campo;
-  final String valorAnterior;
-  final String valorNuevo;
-  final String contexto;
-  final DateTime fechaCambio;
+  final String usuarioNombre;
+  final String accion;
+  final String tabla;
+  final String modulo;
+  final int registroId;
+  final String? registroRef;
+  final String cambios;
+  final String? ipAddress;
+  final bool isSynced;
+  final String? idUnica;
+  final DateTime createdAt;
 
   AuditoriaCambio({
     this.id,
-    required this.monitoreoId,
     required this.usuarioId,
-    required this.nombreUsuario,
-    required this.campo,
-    required this.valorAnterior,
-    required this.valorNuevo,
-    required this.contexto,
-    required this.fechaCambio,
+    required this.usuarioNombre,
+    required this.accion,
+    required this.tabla,
+    required this.modulo,
+    required this.registroId,
+    this.registroRef,
+    required this.cambios,
+    this.ipAddress,
+    this.isSynced = false,
+    this.idUnica,
+    required this.createdAt,
   });
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'monitoreo_id': monitoreoId,
       'usuario_id': usuarioId,
-      'nombre_usuario': nombreUsuario,
-      'campo': campo,
-      'valor_anterior': valorAnterior,
-      'valor_nuevo': valorNuevo,
-      'contexto': contexto,
-      'fecha_cambio': fechaCambio.toIso8601String(),
+      'usuario_nombre': usuarioNombre,
+      'accion': accion,
+      'tabla': tabla,
+      'modulo': modulo,
+      'registro_id': registroId,
+      'registro_ref': registroRef,
+      'cambios': cambios,
+      'ip_address': ipAddress,
+      'is_synced': isSynced ? 1 : 0,
+      'id_unica': idUnica,
+      'created_at': createdAt.toIso8601String(),
     };
   }
 
   factory AuditoriaCambio.fromMap(Map<String, dynamic> map) {
     return AuditoriaCambio(
       id: map['id'],
-      monitoreoId: map['monitoreo_id'],
-      usuarioId: map['usuario_id'],
-      nombreUsuario: map['nombre_usuario'] ?? 'Sistema',
-      campo: map['campo'] ?? '',
-      valorAnterior: map['valor_anterior'] ?? '',
-      valorNuevo: map['valor_nuevo'] ?? '',
-      contexto: map['contexto'] ?? '',
-      fechaCambio: DateTime.parse(map['fecha_cambio']),
+      usuarioId: map['usuario_id'] ?? 0,
+      usuarioNombre: map['usuario_nombre'] ?? 'Sistema',
+      accion: map['accion'] ?? 'update',
+      tabla: map['tabla'] ?? 'monitoreos',
+      modulo: map['modulo'] ?? 'app_collector',
+      registroId: map['registro_id'] ?? map['monitoreo_id'] ?? 0,
+      registroRef: map['registro_ref'] ?? map['contexto'],
+      cambios: map['cambios'] ?? '',
+      ipAddress: map['ip_address'],
+      isSynced: (map['is_synced'] ?? 0) == 1,
+      idUnica: map['id_unica'],
+      createdAt: map['created_at'] != null
+        ? DateTime.parse(map['created_at'])
+        : (map['fecha_cambio'] != null ? DateTime.parse(map['fecha_cambio']) : DateTime.now()),
     );
   }
 }
