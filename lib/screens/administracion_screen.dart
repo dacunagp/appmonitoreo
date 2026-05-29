@@ -246,8 +246,8 @@ class _AdministracionScreenState extends State<AdministracionScreen> with Single
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre Programa')),
                 ] else if (type == 'Estación') ...[
                   TextField(controller: c1, decoration: const InputDecoration(labelText: 'Nombre')),
-                  TextField(controller: c2, decoration: const InputDecoration(labelText: 'Latitud'), keyboardType: TextInputType.number),
-                  TextField(controller: c3, decoration: const InputDecoration(labelText: 'Longitud'), keyboardType: TextInputType.number),
+                  TextField(controller: c2, decoration: const InputDecoration(labelText: 'UTM Norte'), keyboardType: TextInputType.number),
+                  TextField(controller: c3, decoration: const InputDecoration(labelText: 'UTM Este'), keyboardType: TextInputType.number),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
                     value: selectedProgramId,

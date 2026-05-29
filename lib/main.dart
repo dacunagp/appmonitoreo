@@ -36,6 +36,8 @@ import 'services/auth_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
@@ -116,6 +118,9 @@ void main() async {
   OneSignal.Notifications.addClickListener((event) async {
     debugPrint('👆 [OneSignal] Notificación tocada: ${event.notification.title}');
     await _guardarNotificacionLocal(event.notification);
+    
+    // Navegar a la pantalla de notificaciones
+    navigatorKey.currentState?.pushNamed('/notificaciones');
   });
   
   Workmanager().initialize(
@@ -164,6 +169,7 @@ class MonitoreoApp extends StatelessWidget {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Monitoreo App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,

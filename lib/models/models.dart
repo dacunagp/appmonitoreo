@@ -47,8 +47,8 @@ class Station {
     return Station(
       id: json['id_estacion'] ?? json['id'] ?? 0,
       name: json['nombre_estacion'] ?? json['estacion'] ?? json['nombre'] ?? 'Sin nombre',
-      latitude: (json['latitud'] ?? 0.0 as num).toDouble(),
-      longitude: (json['longitud'] ?? 0.0 as num).toDouble(),
+      latitude: (json['utm_norte'] ?? json['latitud'] ?? json['latitude'] ?? 0.0 as num).toDouble(),
+      longitude: (json['utm_este'] ?? json['longitud'] ?? json['longitude'] ?? 0.0 as num).toDouble(),
     );
   }
 
@@ -56,8 +56,10 @@ class Station {
     return {
       'id': id,
       'name': name,
-      'latitude': latitude,
-      'longitude': longitude,
+      'latitud': latitude,
+      'longitud': longitude,
+      'utm_norte': latitude,
+      'utm_este': longitude,
     };
   }
 
