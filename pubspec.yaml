@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_dotenv: ^5.1.0
+  flutter_launcher_icons: ^0.13.1
   http: ^1.2.0
   image_picker: ^1.1.2
   flutter_image_compress: ^2.3.0
@@ -51,3 +52,19 @@ flutter:
     - .env
     - assets/gp-blanco-centrado.png
     - assets/gp_logo_icon.png
+    - assets/appgp_icon.png
+    
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/appgp_icon_master.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/appgp_icon_master.png"
+
+
+
+
+
+
+
+

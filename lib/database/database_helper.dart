@@ -1492,13 +1492,25 @@ class DatabaseHelper {
 
   Future<int> addStation(Station item, int programId) async {
     final db = await database;
-    int stationId = await db.insert('stations', item.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final stationMap = {
+      'id': item.id,
+      'name': item.name,
+      'latitude': item.latitude,
+      'longitude': item.longitude,
+    };
+    int stationId = await db.insert('stations', stationMap, conflictAlgorithm: ConflictAlgorithm.replace);
     await db.insert('program_stations', {'program_id': programId, 'station_id': item.id}, conflictAlgorithm: ConflictAlgorithm.ignore);
     return stationId;
   }
   Future<int> updateStation(Station item) async {
     final db = await database;
-    return await db.update('stations', item.toMap(), where: 'id = ?', whereArgs: [item.id]);
+    final stationMap = {
+      'id': item.id,
+      'name': item.name,
+      'latitude': item.latitude,
+      'longitude': item.longitude,
+    };
+    return await db.update('stations', stationMap, where: 'id = ?', whereArgs: [item.id]);
   }
   Future<int> deleteStation(int id) async {
     final db = await database;
